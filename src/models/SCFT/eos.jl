@@ -52,31 +52,43 @@ end
 export SCFTLatticeFluid
 
 """
-    SCFTSpecies(sequence, nbeads, ensemble, n_molecules, molecule_bulk_density, bulk_density)
+    SCFTSpecies(sequence, nbeads, levels, i_groups, n_intergroups, ensemble, n_molecules, molecule_bulk_density, bulk_density)
 
 Everything SCFT-calculation-specific that isn't part of the bulk EoS model: `sequence`
-(ordered species indices per molecule type, for the chain propagator — `length(sequence[i])`
-is the actual chain length `Ni`), `nbeads` (the *number of distinct species* used by
-molecule type `i`, `length.(model.groups.i_groups)` — **not** the chain length; matches the
-field `PCSAFTSpecies`/`gcPCPSAFTSpecies` use for the same purpose, needed so the generic
+(species indices per molecule type's flattened group/node list, for the chain
+propagator — `length(sequence[i])` is the total node count `Ni`; for a branched molecule
+this is *node* order, i.e. `model.groups.i_groups[i]`'s order, not a linear chain
+position), `nbeads` (the *number of distinct species* used by molecule type `i`,
+`length.(model.groups.i_groups)` — **not** the node count; matches the field
+`PCSAFTSpecies`/`gcPCPSAFTSpecies` use for the same purpose, needed so the generic
 structure-dispatched `initialize_profiles` methods in `src/structure/structure.jl`/
 `two_phase.jl`/`morphology.jl` — which size arrays via `sum(species.nbeads)` — work
-unmodified for SCFT systems too), `ensemble`/`n_molecules` (per molecule type),
-`molecule_bulk_density` (per molecule type — `structure.ρbulk` unchanged, the *total*
-target bulk density of each molecule type, e.g. `rho0` for a pure melt; used directly in
-the grand-canonical prefactor formulas in `compute_densities!`/`free_energy`), and
-`bulk_density` (per **species**, e.g. one value each for "A"/"B" in a diblock — computed
-once here in `get_species` by splitting `molecule_bulk_density` across each
-molecule type's segments, weighted by segment count for grand-canonical types or by
-`n_molecules`/(box volume) for canonical types. Precomputing this at construction time,
-rather than recomputing it on every call the way the old `compute_bulk_densities(system;
-V_eff)` runtime function did, is what lets `structure.ρbulk` be supplied "ahead of time"
-exactly like DFT-family models require — see `compute_bulk_densities(system::SCFTSystem)`
-(`src/models/SCFT/scft.jl`), now a trivial `system.species.bulk_density` accessor).
+unmodified for SCFT systems too), `levels`/`i_groups`/`n_intergroups` (tree-traversal
+data `DiscreteGaussianChainPropagator` needs — see `compute_levels`, `src/utils/base.jl`
+— copied straight off the *expanded* model's `GroupParam` here in `get_species`, since
+`SCFTSystem` deliberately keeps only the *original*, unexpanded `model` (see
+`expand_groups`'s docstring), so the propagator has no other way to reach this
+per-node-instance bond data at construction/`propagate!` time; degenerates to a simple
+linear chain traversal when `mol_structure` happens to be unbranched), `ensemble`/
+`n_molecules` (per molecule type), `molecule_bulk_density` (per molecule type —
+`structure.ρbulk` unchanged, the *total* target bulk density of each molecule type, e.g.
+`rho0` for a pure melt; used directly in the grand-canonical prefactor formulas in
+`compute_densities!`/`free_energy`), and `bulk_density` (per **species**, e.g. one value
+each for "A"/"B" in a diblock — computed once here in `get_species` by splitting
+`molecule_bulk_density` across each molecule type's segments, weighted by segment count
+for grand-canonical types or by `n_molecules`/(box volume) for canonical types.
+Precomputing this at construction time, rather than recomputing it on every call the way
+the old `compute_bulk_densities(system; V_eff)` runtime function did, is what lets
+`structure.ρbulk` be supplied "ahead of time" exactly like DFT-family models require —
+see `compute_bulk_densities(system::SCFTSystem)` (`src/models/SCFT/scft.jl`), now a
+trivial `system.species.bulk_density` accessor).
 """
 struct SCFTSpecies <: DFTSpecies
     sequence::Vector{Vector{Int}}
     nbeads::Vector{Int}
+    levels::Vector{Int}
+    i_groups::Vector{Vector{Int}}
+    n_intergroups::Vector{Matrix{Int}}
     ensemble::Vector{Symbol}
     n_molecules::Vector{Float64}
     molecule_bulk_density::Vector{Float64}
@@ -104,10 +116,12 @@ Global flattened indices are still assigned **type-contiguous** (`"A_*"` block, 
 expansion unmodified — only the *order in which each component's `i_groups[i]` lists its
 instances* differs from the generic version, not the underlying global numbering scheme.
 
-Validates that `mol_structure` is a linear (unbranched) chain — SCFT's propagator can't
-represent branching — and that its composition matches `model.groups.n_flattenedgroups`
-(the composition already implied by `grouplist`). Note `custom_structure`'s parser only
-supports single-character species names.
+Validates that `mol_structure`'s composition matches `model.groups.n_flattenedgroups`
+(the composition already implied by `grouplist`); branched `mol_structure` (produced by
+`custom_structure`'s `"A(B)C"` syntax) is accepted — `DiscreteGaussianChainPropagator`
+walks the resulting bond tree via `SCFTSpecies.levels` (see `compute_levels`,
+`src/utils/base.jl`), the same tree-traversal convention `TangentHSPropagator` uses.
+Note `custom_structure`'s parser only supports single-character species names.
 
 Returns `(expanded_groups::GroupParam, ngroups_k::Vector{Int})` (matching Clapeyron's own
 `expand_groups`'s return shape, for `expand_params`).
@@ -122,13 +136,6 @@ function expand_groups(model::SCFTLatticeFluid, mol_structure::Dict{String,<:Mol
     bondmat_per_comp = Vector{Matrix{Int}}(undef, ncomp)
     for (i, comp) in enumerate(model.components)
         _, names, bond_mat = get_connectivity(model, mol_structure[comp])
-        n = length(names)
-        expected = zeros(Int, n, n)
-        for k in 1:n-1
-            expected[k,k+1] = 1
-            expected[k+1,k] = 1
-        end
-        @assert bond_mat == expected "mol_structure for $comp must be a linear (unbranched) chain"
         counts = zeros(Int, ngroup_types)
         for nm in names
             counts[name_to_idx0[nm]] += 1
@@ -151,9 +158,11 @@ function expand_groups(model::SCFTLatticeFluid, mol_structure::Dict{String,<:Mol
     end
     letter_base = cumsum([0; ngroups_k[1:end-1]])
 
-    # Per-component chain-ORDER i_groups: walk each component's actual chain positions
-    # (already in exact order) and assign the next unused global instance for that
-    # position's letter — unlike Clapeyron's own ascending-index extraction.
+    # Per-component NODE-ORDER i_groups: walk each component's actual group/node
+    # positions in `get_connectivity`'s parse order (a tree pre-order for branched
+    # `mol_structure`, and a strict left-to-right chain order in the linear case) and
+    # assign the next unused global instance for that position's letter — unlike
+    # Clapeyron's own ascending-index extraction.
     letter_running = zeros(Int, ngroup_types)
     i_groups = Vector{Vector{Int}}(undef, ncomp)
     groups = Vector{Vector{String}}(undef, ncomp)
@@ -251,6 +260,7 @@ function get_species(model::SCFTLatticeFluid, structure::DFTStructure;
 
     sequence = [[letter_idx[letters[k]] for k in ig] for ig in model.groups.i_groups]
     nbeads = length.(unique.(sequence))
+    levels = compute_levels(model)
 
     molecule_bulk_density = Float64.(structure.ρbulk)
     n_molecules_f = Float64.(n_molecules)
@@ -268,7 +278,8 @@ function get_species(model::SCFTLatticeFluid, structure::DFTStructure;
         end
     end
 
-    return SCFTSpecies(sequence, nbeads, ensemble, n_molecules_f, molecule_bulk_density, bulk_density)
+    return SCFTSpecies(sequence, nbeads, levels, model.groups.i_groups, model.groups.n_intergroups,
+                        ensemble, n_molecules_f, molecule_bulk_density, bulk_density)
 end
 
 #=

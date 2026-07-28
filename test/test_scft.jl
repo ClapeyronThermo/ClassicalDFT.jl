@@ -1,19 +1,34 @@
-using Test, cDFT
+using Test, cDFT, FFTW
 
 # Collapses the model/mol_structure/structure/system construction repeated across nearly
 # every SCFT testset. `chain_specs` is a list of `(name, group_counts)` pairs, e.g.
 # `[("diblock", ["A"=>5,"B"=>5])]`; the linear bead sequence for `mol_structure` is built
-# automatically from each spec's group letters/counts.
+# automatically from each spec's group letters/counts, unless `mol_structure_strings`
+# (a `Dict{String,String}` of raw `custom_structure` syntax, e.g. `"A(A)(A)A"`) is given
+# to describe a branched (or otherwise non-default) topology instead.
 function build_scft_system(chain_specs, chi; rho0=1.0, kappa=20.0, b=ones(size(chi,1)),
                             L=10.0, ngrid=65, rhobulk_seed=ones(length(chain_specs)),
                             ensemble=fill(:canonical, length(chain_specs)),
                             n_molecules=ones(length(chain_specs)),
-                            structure=cDFT.Uniform1DCart((0.0,0.0), rhobulk_seed, [0.0,L], ngrid))
+                            structure=cDFT.Uniform1DCart((0.0,0.0), rhobulk_seed, [0.0,L], ngrid),
+                            mol_structure_strings=nothing)
     model = cDFT.SCFTLatticeFluid(chain_specs, b, chi; rho0=rho0, kappa=kappa)
-    mol_structure = Dict(name => cDFT.custom_structure(join(letter^n for (letter,n) in groups))
-                          for (name, groups) in chain_specs)
+    mol_structure = if mol_structure_strings !== nothing
+        Dict(name => cDFT.custom_structure(s) for (name, s) in mol_structure_strings)
+    else
+        Dict(name => cDFT.custom_structure(join(letter^n for (letter,n) in groups))
+             for (name, groups) in chain_specs)
+    end
     return cDFT.SCFTSystem(model, structure, cDFT.DFTOptions();
         mol_structure=mol_structure, ensemble=ensemble, n_molecules=n_molecules)
+end
+
+# FFT-based reference convolution, independent of cDFT's own `convolve!`/propagator
+# machinery — used by the brute-force chain-integral checks below.
+function _ref_conv(f::Vector{Float64}, kernel, ngrid::Int)
+    P  = plan_rfft(zeros(ngrid), 1:1)
+    iP = plan_irfft(zeros(ComplexF64, ngrid ÷ 2 + 1), ngrid, 1:1)
+    return real.(iP * (kernel .* (P * f)))
 end
 
 @testset "SCFT" begin
@@ -26,10 +41,13 @@ end
         bad_mol_structure = Dict("diblock" => cDFT.custom_structure("AABBB"))
         @test_throws AssertionError cDFT.expand_model(model, bad_mol_structure)
 
-        # a branched mol_structure (SCFT's propagator can't represent branching) must throw
+        # a branched mol_structure is now accepted (DiscreteGaussianChainPropagator walks
+        # the resulting bond tree — see SCFTSpecies's docstring) rather than rejected.
         branched_model = cDFT.SCFTLatticeFluid([("chain", ["A"=>3, "B"=>2])], [1.0, 1.2], chi; rho0=1.0, kappa=20.0)
         branched_structure = Dict("chain" => cDFT.custom_structure("AA(B)AB"))
-        @test_throws AssertionError cDFT.expand_model(branched_model, branched_structure)
+        expanded = cDFT.expand_model(branched_model, branched_structure)
+        @test length(expanded.groups.flattenedgroups) == 5
+        @test sum(expanded.groups.n_intergroups[1]) == 2 * 4  # 4 bonds, symmetric matrix
     end
 
     @testset "Propagator kernel matches analytic Gaussian-chain formula" begin
@@ -247,5 +265,137 @@ end
         @test argmax(ρ[:, 1]) != argmax(ρ[:, 2])
         # Strictly positive everywhere (amplitude < 1 guarantee from _fill_morphology!)
         @test all(ρ .> 0)
+    end
+
+    @testset "Branched architecture: propagator matches an independent reference sweep" begin
+        # Second, independently-written implementation of the same bottom-up/top-down
+        # tree recursion _dgc_tree_sweep! (src/propagator/discrete_gaussian_chain.jl)
+        # implements — own convolution routine, own loops/data structures — used to
+        # catch indexing/implementation regressions in the real propagator. Covers a
+        # plain linear chain (the degenerate case — every existing test above already
+        # exercises this, but only indirectly via full SCF convergence; this checks the
+        # propagator sweep itself in isolation), a symmetric 3-arm star (a genuine
+        # multi-child branch point), and an asymmetric 2-species Y-shaped chain.
+        function ref_tree_sweep(seg_spec, local_bonds, lev, kernels, ef, ngrid)
+            Nc = length(seg_spec)
+            n_levels = maximum(lev)
+            i_root = findfirst(==(1), lev)
+            q_in  = [zeros(ngrid) for _ in 1:Nc]
+            q_out = [zeros(ngrid) for _ in 1:Nc]
+            for L in n_levels:-1:1
+                for k in findall(==(L), lev)
+                    acc = copy(ef[seg_spec[k]])
+                    for j in findall(local_bonds[k, :] .& (lev .== L + 1))
+                        acc .*= _ref_conv(q_in[j], kernels[minmax(seg_spec[k], seg_spec[j])], ngrid)
+                    end
+                    q_in[k] = acc
+                end
+            end
+            q_out[i_root] = copy(ef[seg_spec[i_root]])
+            for L in 1:n_levels-1
+                for k in findall(==(L), lev)
+                    children = findall(local_bonds[k, :] .& (lev .== L + 1))
+                    conv_to_k = Dict(s => _ref_conv(q_in[s], kernels[minmax(seg_spec[k], seg_spec[s])], ngrid) for s in children)
+                    for j in children
+                        base = copy(q_out[k])
+                        for s in children
+                            s == j && continue
+                            base .*= conv_to_k[s]
+                        end
+                        q_out[j] = _ref_conv(base, kernels[minmax(seg_spec[k], seg_spec[j])], ngrid) .* ef[seg_spec[j]]
+                    end
+                end
+            end
+            return q_in, q_out, i_root
+        end
+
+        function check_topology(mol_structure_string, group_counts; L=10.0, ngrid=24, n_molecules=2.0)
+            model_species = unique(first.(group_counts))
+            b = ones(length(model_species))
+            chi = zeros(length(model_species), length(model_species))
+            system = build_scft_system([("mol", group_counts)], chi; b=b, L=L, ngrid=ngrid,
+                ensemble=[:canonical], n_molecules=[n_molecules],
+                mol_structure_strings=Dict("mol" => mol_structure_string))
+
+            species = system.species
+            nspecies = length(model_species)
+            z = range(0, L, length=ngrid+1)[1:end-1]
+            # A distinct, non-uniform field per species so every bond direction is exercised.
+            w = hcat((0.3 .* sin.(2π .* (α) .* z ./ L) .+ 0.05 .* α for α in 1:nspecies)...)
+            w_bulk = cDFT.compute_bulk_fields(system.model, cDFT.compute_bulk_densities(system))
+            ef = [exp.(w_bulk[α] .- w[:, α]) for α in 1:nspecies]
+
+            seg_spec = species.sequence[1]
+            ig = species.i_groups[1]
+            lev = species.levels[ig]
+            local_bonds = species.n_intergroups[1][ig, ig] .!= 0
+            # Reuse cDFT's own R2C (half-complex) kernels directly — _ref_conv expects
+            # the same half-complex kernel shape _dgc_tree_sweep! uses.
+            kernels = system.propagator.kernel_map
+
+            q_in_ref, q_out_ref, i_root = ref_tree_sweep(seg_spec, local_bonds, lev, kernels, ef, ngrid)
+
+            ρ = ones(ngrid, nspecies)
+            cache_propagator = cDFT.preallocate_propagator(system, system.propagator, ρ, system.options.device)
+            q_in, q_out, buf_r, buf_c, child_buf, P, iP = cache_propagator
+            cDFT.propagate!(system, ρ, w, cache_propagator; w_bulk=w_bulk, exp_field=nothing)
+
+            for k in 1:length(seg_spec)
+                @test q_in[1][:, k]  ≈ q_in_ref[k]  rtol=1e-10
+                @test q_out[1][:, k] ≈ q_out_ref[k] rtol=1e-10
+            end
+
+            V_eff = L
+            Q = cDFT.compute_partition_functions(system, w, w_bulk, q_in, cDFT.structure_dz(system.structure); V_eff=V_eff)
+            Q_ref = sum(q_in_ref[i_root]) * (L/ngrid) / V_eff
+            @test Q[1] ≈ Q_ref rtol=1e-10
+
+            ρ_actual = similar(ρ)
+            cDFT.compute_densities!(system, w, w_bulk, q_in, q_out, Q, ρ_actual; V_eff=V_eff)
+            inv_ef = [exp.(w[:, α] .- w_bulk[α]) for α in 1:nspecies]
+            prefactor = n_molecules / (V_eff * Q_ref)
+            ρ_ref = zeros(ngrid, nspecies)
+            for k in 1:length(seg_spec)
+                α = seg_spec[k]
+                ρ_ref[:, α] .+= prefactor .* q_in_ref[k] .* q_out_ref[k] .* inv_ef[α]
+            end
+            @test ρ_actual ≈ ρ_ref rtol=1e-10
+        end
+
+        # Degenerate case: a plain linear chain, routed through the same tree code path
+        # every other case here uses (there is no separate "linear" code path anymore).
+        check_topology("AAAAA", ["A"=>5])
+
+        # Symmetric 3-arm star: a genuine multi-child branch point at the root.
+        check_topology("A(A)(A)A", ["A"=>4])
+
+        # Asymmetric, 2-species Y-shaped chain: branch point away from either species'
+        # own bond kernel being trivially self-similar.
+        check_topology("AA(B)AB", ["A"=>3, "B"=>2])
+    end
+
+    @testset "Branched architecture: end-to-end convergence (3-arm star melt)" begin
+        # Golden-path smoke test: a single-species homopolymer star melt should converge
+        # to a uniform density equal to rho0, exactly like a linear homopolymer melt would
+        # (branching doesn't change the bulk equation of state for a single species with
+        # no chi interactions — only the single-chain statistics, which don't appear in a
+        # spatially-uniform solution).
+        rho0 = 1.0
+        L = 10.0
+        n_seg = 7
+        # n_molecules chosen so n_seg segments/chain * n_molecules/L exactly fills to rho0
+        # (matching how e.g. the "Uniform self-consistency" testset above tunes its own
+        # n_molecules so nbeads*n_molecules/L == rho0).
+        system = build_scft_system([("star", ["A"=>n_seg])], zeros(1,1); rho0=rho0, kappa=20.0,
+            ensemble=[:canonical], n_molecules=[L/n_seg], L=L, ngrid=33,
+            mol_structure_strings=Dict("star" => "AAA(AAA)A"))
+
+        bulk = cDFT.compute_bulk_densities(system)
+        ngrid = system.structure.ngrid[1]
+        ρ = fill(bulk[1], ngrid, 1)
+        cDFT.converge!(system, ρ)
+
+        @test all(x -> isapprox(x, bulk[1]; rtol=1e-6), ρ[:, 1])
+        @test isapprox(bulk[1], rho0; rtol=1e-6)
     end
 end

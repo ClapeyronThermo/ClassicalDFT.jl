@@ -1,17 +1,20 @@
 """
     DiscreteGaussianChainPropagator(model, species, structure, device, FP=Float64)
 
-Construct a `DiscreteGaussianChainPropagator` for linear polymer chains with
-per-species-type segment lengths and automatic junction kernels, matching the generic
-`(model, species, structure, device, FP)` constructor signature every other
+Construct a `DiscreteGaussianChainPropagator` for (linear or branched-tree) polymer
+chains with per-species-type segment lengths and automatic junction kernels, matching
+the generic `(model, species, structure, device, FP)` constructor signature every other
 `DFTPropagator` uses (e.g. `TangentHSPropagator`).
 
 # Arguments
 - `model::EoSModel`: Supplies `b_species = model.params.b.values`, the statistical segment
   length for each species type.
-- `species::DFTSpecies`: Supplies `species.sequence`, the segment-to-species mapping per
-  chain (also gives `N = length.(species.sequence)`). Only used here to build the kernel
-  map — not stored on the returned propagator (see its docstring).
+- `species::DFTSpecies`: Supplies `species.sequence`, the node-to-species mapping per
+  chain (also gives `N = length.(species.sequence)`), and `species.i_groups`/
+  `species.n_intergroups`, the per-chain bond tree used to enumerate bonded pairs (see
+  `SCFTSpecies`'s docstring — this data can't come from `model.groups` here, since
+  `SCFTSystem` keeps only the original, unexpanded `model`). Only used here to build the
+  kernel map — not stored on the returned propagator (see its docstring).
 - `structure::DFTStructure`: The spatial discretization structure.
 - `device::Backend`: Device backend.
 - `FP::Type{<:AbstractFloat}`: Float precision (default `Float64`).
@@ -55,12 +58,19 @@ function DiscreteGaussianChainPropagator(
         ν_sq .+= reshape(ω̂[i] .^ 2, ntuple(d -> d == i ? rfft_ngrid[d] : 1, nd))
     end
 
-    # Find all unique adjacent species pairs across all chains
+    # Find all unique bonded species pairs across all chains, walking each chain's
+    # bond tree (species.i_groups/n_intergroups, copied off the expanded model in
+    # get_species — see SCFTSpecies's docstring) rather than assuming linear
+    # i-1/i adjacency. Degenerates to the old linear walk when every chain is unbranched.
     bond_pairs = Set{Tuple{Int,Int}}()
     for c in 1:nchains
         seg_spec = segment_species[c]
-        for i in 2:N[c]
-            push!(bond_pairs, minmax(seg_spec[i-1], seg_spec[i]))
+        ig = species.i_groups[c]
+        bonds = species.n_intergroups[c]
+        for a in 1:N[c], b in (a+1):N[c]
+            if bonds[ig[a], ig[b]] != 0
+                push!(bond_pairs, minmax(seg_spec[a], seg_spec[b]))
+            end
         end
     end
 
@@ -95,7 +105,11 @@ function preallocate_propagator(system, propagator::DiscreteGaussianChainPropaga
     sequence = system.species.sequence
     nchains = length(sequence)
 
-    # Allocate forward and backward propagator arrays per chain.
+    # Allocate q_in (bottom-up: subtree rooted at each node) and q_out (top-down:
+    # everything on the far side of each node from its own subtree) arrays per chain,
+    # one node-indexed slot per entry of species.sequence[c] (node order — see
+    # SCFTSpecies's docstring; degenerates to plain chain-position order for a linear
+    # chain, so this is the same shape the old q_fwd/q_bwd arrays used).
     # Use a concrete element type (not Vector{Any}) to avoid type-dispatch overhead
     # in the hot propagation loop. When nchains == 0 (solvent-only system), allocate
     # empty typed vectors using a dummy size so downstream code has a concrete type.
@@ -103,14 +117,14 @@ function preallocate_propagator(system, propagator::DiscreteGaussianChainPropaga
     CT = Complex{FP}
     proto_N = nchains > 0 ? length(sequence[1]) : 1
     q_proto = allocate(backend, FP, ngrid..., proto_N)
-    q_fwd   = Vector{typeof(q_proto)}(undef, nchains)
-    q_bwd   = Vector{typeof(q_proto)}(undef, nchains)
+    q_in    = Vector{typeof(q_proto)}(undef, nchains)
+    q_out   = Vector{typeof(q_proto)}(undef, nchains)
     if nchains > 0
-        q_fwd[1] = q_proto
-        q_bwd[1] = allocate(backend, FP, ngrid..., length(sequence[1]))
+        q_in[1] = q_proto
+        q_out[1] = allocate(backend, FP, ngrid..., length(sequence[1]))
         for c in 2:nchains
-            q_fwd[c] = allocate(backend, FP, ngrid..., length(sequence[c]))
-            q_bwd[c] = allocate(backend, FP, ngrid..., length(sequence[c]))
+            q_in[c] = allocate(backend, FP, ngrid..., length(sequence[c]))
+            q_out[c] = allocate(backend, FP, ngrid..., length(sequence[c]))
         end
     end
 
@@ -118,9 +132,13 @@ function preallocate_propagator(system, propagator::DiscreteGaussianChainPropaga
     #   buf_r — real input,  shape ngrid
     #   buf_c — complex output, shape (ngrid[1]÷2+1, ngrid[2:end]...)
     # Using R2C instead of C2C halves the FFT work (~2× faster for real data).
+    # child_buf — real scratch (shape ngrid) holding one child/sibling subtree's
+    # convolved contribution before it's folded into a node's accumulated product;
+    # only needed once a node can have more than one child (branching).
     rfft_ngrid = (ngrid[1] ÷ 2 + 1, ngrid[2:end]...)
     buf_r = allocate(backend, FP, ngrid...)
     buf_c = allocate(backend, CT, rfft_ngrid...)
+    child_buf = allocate(backend, FP, ngrid...)
 
     if backend isa CPU
         P  = plan_rfft(buf_r,  1:nd; num_threads=Threads.nthreads())
@@ -130,59 +148,122 @@ function preallocate_propagator(system, propagator::DiscreteGaussianChainPropaga
         iP = plan_irfft(buf_c, ngrid[1], 1:nd)
     end
 
-    return q_fwd, q_bwd, buf_r, buf_c, P, iP
+    return q_in, q_out, buf_r, buf_c, child_buf, P, iP
 end
 
-function propagate!(system, propagator::DiscreteGaussianChainPropagator, ρ, δfδρ_res, q_fwd, q_bwd, buf_r, buf_c, P, iP)
+"""
+    chain_root(species, c)
+
+Local index (within `species.sequence[c]`/`species.i_groups[c]`) of chain `c`'s root
+node — the same highest-degree-node BFS root `compute_levels` (`src/utils/base.jl`)
+picks. By the sum-product/belief-propagation invariant that makes tree message passing
+exact, `Q`/the per-node densities computed from `q_in`/`q_out` do not depend on which
+node is chosen as root — this just needs to match the root `_dgc_tree_sweep!` uses.
+"""
+chain_root(species, c) = findfirst(==(1), @view(species.levels[species.i_groups[c]]))
+
+"""
+    _dgc_tree_sweep!(q_in, q_out, child_buf, buf_r, buf_c, P, iP, kernel_map, species, c, seg_spec, ef, nd)
+
+Bottom-up/top-down discrete-Gaussian-chain sweep for one chain `c`'s bond tree
+(`species.i_groups[c]`/`species.n_intergroups[c]`/`species.levels`), writing every
+node's `q_in`/`q_out` value into `q_in[c]`/`q_out[c]`. `ef(α)` supplies the per-species
+field factor (`exp(-w_α)` for the plain propagator, `exp(w_bulk_α - w_α)` for SCFT's
+shifted-field variant — the two `propagate!` methods below only differ in this closure).
+
+For node `k` with children `children(k)` (nodes one level further from the root, bonded
+to `k`) and, for non-root `k`, parent `p` and siblings `S = children(p) \\ {k}`:
+```
+q_in[k]  = ef(α(k)) · ∏_{j ∈ children(k)} conv(q_in[j], kernel(α(k),α(j)))
+q_out[root] = ef(α(root))
+q_out[k] = conv(q_out[p] · ∏_{s ∈ S} conv(q_in[s], kernel(α(p),α(s))), kernel(α(p),α(k))) · ef(α(k))    (k ≠ root)
+```
+(each sibling's `q_in` must be convolved onto `p`'s position *before* being combined
+with `q_out[p]` — it lives at the sibling's own position, not `p`'s, exactly like a
+child's `q_in` is convolved onto its parent's position in the `q_in` recursion above).
+Each of `q_in[k]`/`q_out[k]` carries exactly one factor of `ef(α(k))` — the same
+double-counting convention the old linear `q_fwd`/`q_bwd` arrays used (`q_fwd[s]` and
+`q_bwd[N+1-s]` each carried segment `s`'s own field factor once, so their product
+double-counts it once; downstream code corrects for this, see `compute_densities!`'s
+`inv_exp_field`/`exp(Δw_α)` — unchanged here). A one-child-per-node tree (a linear chain)
+makes this recursion collapse exactly onto the old `q_fwd`/`q_bwd` recursion.
+"""
+function _dgc_tree_sweep!(q_in, q_out, child_buf, buf_r, buf_c, P, iP, kernel_map, species, c, seg_spec, ef, nd)
+    ig  = species.i_groups[c]
+    lev = species.levels[ig]
+    Bc  = species.n_intergroups[c][ig, ig] .!= 0
+    n_levels = maximum(lev)
+    i_root = findfirst(==(1), lev)
+
+    q_in_c  = q_in[c]
+    q_out_c = q_out[c]
+
+    # Bottom-up: leaves → root
+    for L in n_levels:-1:1
+        for k in findall(==(L), lev)
+            dest_k = selectdim(q_in_c, nd+1, k)
+            dest_k .= ef(seg_spec[k])
+            for j in findall(Bc[k, :] .& (lev .== L + 1))
+                bond_key = minmax(seg_spec[k], seg_spec[j])
+                convolve!(child_buf, selectdim(q_in_c, nd+1, j), kernel_map[bond_key], P, iP, buf_r, buf_c)
+                dest_k .*= child_buf
+            end
+        end
+    end
+
+    # Top-down: root → leaves
+    selectdim(q_out_c, nd+1, i_root) .= ef(seg_spec[i_root])
+    for L in 1:n_levels-1
+        for k in findall(==(L), lev)
+            children = findall(Bc[k, :] .& (lev .== L + 1))
+            # Convolve each child's q_in onto k's own position once (it lives at the
+            # child's position, not k's — same as the bottom-up pass), reused below when
+            # building every OTHER child's q_out, instead of recomputing per sibling pair.
+            conv_to_k = Vector{typeof(child_buf)}(undef, length(children))
+            for (idx, s) in enumerate(children)
+                buf_s = similar(child_buf)
+                bond_key_s = minmax(seg_spec[k], seg_spec[s])
+                convolve!(buf_s, selectdim(q_in_c, nd+1, s), kernel_map[bond_key_s], P, iP, buf_r, buf_c)
+                conv_to_k[idx] = buf_s
+            end
+            for (idx, j) in enumerate(children)
+                dest_j = selectdim(q_out_c, nd+1, j)
+                dest_j .= selectdim(q_out_c, nd+1, k)
+                for (idx2, s) in enumerate(children)
+                    idx2 == idx && continue
+                    dest_j .*= conv_to_k[idx2]
+                end
+                bond_key = minmax(seg_spec[k], seg_spec[j])
+                convolve!(child_buf, dest_j, kernel_map[bond_key], P, iP, buf_r, buf_c)
+                dest_j .= child_buf .* ef(seg_spec[j])
+            end
+        end
+    end
+    return nothing
+end
+
+function propagate!(system, propagator::DiscreteGaussianChainPropagator, ρ, δfδρ_res, q_in, q_out, buf_r, buf_c, child_buf, P, iP)
     nd = dimension(system)
-    ngrid = system.structure.ngrid
-    sequence = system.species.sequence
+    species = system.species
+    sequence = species.sequence
     nchains = length(sequence)
+
+    ef(α) = exp.(.-selectdim(δfδρ_res, nd+1, α))
 
     for c in 1:nchains
         seg_spec = sequence[c]
-        Nc = length(seg_spec)
+        _dgc_tree_sweep!(q_in, q_out, child_buf, buf_r, buf_c, P, iP, propagator.kernel_map, species, c, seg_spec, ef, nd)
 
-        # Forward propagator: q(r, i) for i = 1..N (1-indexed)
-        # q(r, 1) = exp(-w_{α(1)}(r))
-        α1 = seg_spec[1]
-        selectdim(q_fwd[c], nd+1, 1) .= exp.(.-selectdim(δfδρ_res, nd+1, α1))
-
-        for i in 2:Nc
-            αi = seg_spec[i]
-            # Select kernel based on the bond between segments i-1 and i
-            bond_key = minmax(seg_spec[i-1], seg_spec[i])
-            kernel = propagator.kernel_map[bond_key]
-            # Convolve q_fwd(:, i-1) with kernel, store in q_fwd(:, i)
-            convolve!(selectdim(q_fwd[c], nd+1, i), selectdim(q_fwd[c], nd+1, i-1), kernel, P, iP, buf_r, buf_c)
-            # Multiply by exp(-w_{α(i)})
-            selectdim(q_fwd[c], nd+1, i) .*= exp.(.-selectdim(δfδρ_res, nd+1, αi))
-        end
-
-        # Backward propagator: q†(r, i) for i = 1..N (1-indexed)
-        # q†(r, 1) = exp(-w_{α(N)}(r))
-        αN = seg_spec[Nc]
-        selectdim(q_bwd[c], nd+1, 1) .= exp.(.-selectdim(δfδρ_res, nd+1, αN))
-
-        for i in 2:Nc
-            αi = seg_spec[Nc - i + 1]
-            # Bond between segments (Nc-i+1) and (Nc-i+2) in the original chain
-            bond_key = minmax(seg_spec[Nc - i + 1], seg_spec[Nc - i + 2])
-            kernel = propagator.kernel_map[bond_key]
-            # Convolve q_bwd(:, i-1) with kernel, store in q_bwd(:, i)
-            convolve!(selectdim(q_bwd[c], nd+1, i), selectdim(q_bwd[c], nd+1, i-1), kernel, P, iP, buf_r, buf_c)
-            # Multiply by exp(-w_{α(N-i+1)})
-            selectdim(q_bwd[c], nd+1, i) .*= exp.(.-selectdim(δfδρ_res, nd+1, αi))
-        end
-
-        # Density contribution: modify δfδρ_res
+        # Density contribution: modify δfδρ_res. q_in[k]*q_out[k] is the (one-factor
+        # double-counted, uncorrected) per-node weight — see _dgc_tree_sweep!'s docstring;
+        # this mirrors the old linear code's uncorrected q_fwd[s]*q_bwd[N+1-s] exactly.
         unique_species = unique(seg_spec)
         for α in unique_species
             seg_indices = findall(==(α), seg_spec)
             first_idx = seg_indices[1]
-            sum_qq = selectdim(q_fwd[c], nd+1, first_idx) .* selectdim(q_bwd[c], nd+1, Nc + 1 - first_idx)
+            sum_qq = selectdim(q_in[c], nd+1, first_idx) .* selectdim(q_out[c], nd+1, first_idx)
             for idx in seg_indices[2:end]
-                sum_qq = sum_qq .+ selectdim(q_fwd[c], nd+1, idx) .* selectdim(q_bwd[c], nd+1, Nc + 1 - idx)
+                sum_qq = sum_qq .+ selectdim(q_in[c], nd+1, idx) .* selectdim(q_out[c], nd+1, idx)
             end
             selectdim(δfδρ_res, nd+1, α) .-= log.(sum_qq)
         end
@@ -192,7 +273,7 @@ end
 """
     propagate!(system::SCFTSystem, ρ, w, cache_propagator; w_bulk, exp_field=nothing)
 
-Run discrete-Gaussian-chain forward/backward propagator sweeps using shifted fields
+Run discrete-Gaussian-chain tree sweeps (see `_dgc_tree_sweep!`) using shifted fields
 `Δw = w - w_bulk`. `ρ` is accepted but unused — kept purely for positional uniformity
 with every other `propagate!` method (`IdealPropagator`, `TangentHSPropagator`), all of
 which take `(system, ρ, field, cache_propagator)`.
@@ -204,10 +285,11 @@ so `Q̃ ≈ 1` for uniform systems (instead of `Q ∼ exp(-N * w_bulk) ≈ 0`).
 """
 function propagate!(system::SCFTSystem, ρ, w, cache_propagator;
                     w_bulk, exp_field=nothing)
-    q_fwd, q_bwd, buf_r, buf_c, P, iP = cache_propagator
+    q_in, q_out, buf_r, buf_c, child_buf, P, iP = cache_propagator
     nd = dimension(system)
     propagator = system.propagator
-    sequence = system.species.sequence
+    species = system.species
+    sequence = species.sequence
     nchains = length(sequence)
 
     # Helper: return precomputed exp_field[α] if available, else compute on the fly.
@@ -217,30 +299,6 @@ function propagate!(system::SCFTSystem, ρ, w, cache_propagator;
 
     for c in 1:nchains
         seg_spec = sequence[c]
-        Nc = length(seg_spec)
-
-        # Forward propagator with shifted fields
-        α1 = seg_spec[1]
-        selectdim(q_fwd[c], nd+1, 1) .= ef(α1)
-
-        # Backward propagator with shifted fields
-        αN = seg_spec[Nc]
-        selectdim(q_bwd[c], nd+1, 1) .= ef(αN)
-
-        for i in 2:Nc
-            αi = seg_spec[i]
-            bond_key = minmax(seg_spec[i-1], seg_spec[i])
-            kernel = propagator.kernel_map[bond_key]
-            convolve!(selectdim(q_fwd[c], nd+1, i), selectdim(q_fwd[c], nd+1, i-1), kernel, P, iP, buf_r, buf_c)
-            selectdim(q_fwd[c], nd+1, i) .*= ef(αi)
-        end
-
-        for i in 2:Nc
-            αi = seg_spec[Nc - i + 1]
-            bond_key = minmax(seg_spec[Nc - i + 1], seg_spec[Nc - i + 2])
-            kernel = propagator.kernel_map[bond_key]
-            convolve!(selectdim(q_bwd[c], nd+1, i), selectdim(q_bwd[c], nd+1, i-1), kernel, P, iP, buf_r, buf_c)
-            selectdim(q_bwd[c], nd+1, i) .*= ef(αi)
-        end
+        _dgc_tree_sweep!(q_in, q_out, child_buf, buf_r, buf_c, P, iP, propagator.kernel_map, species, c, seg_spec, ef, nd)
     end
 end
