@@ -14,15 +14,15 @@ function TangentHSPropagator(model::EoSModel,species::DFTSpecies,structure::DFTS
                 R = FP((species.size[j] + species.size[k])/L*π)
                 
                 ω̄ = dropdims(sqrt.(sum(abs2, ω, dims=nd+1)), dims=nd+1)  # lives on same backend as ω
+                ω̄R   = ω̄ .* R  
 
 
                 mask = ω̄ .== 0
-                val = ifelse.(mask,
-                        1 ,                  # ω̄=0 case
-                        sin.(ω̄.*R)./ω̄./R        # ω̄≠0 case
+                selectdim(selectdim(Ω, nd+1, j), nd+1, k) .= ifelse.(mask,
+                        1,                  # ω̄=0 case
+                        sin.(ω̄R)./ω̄R        # ω̄≠0 case
                     )
-                selectdim(selectdim(Ω, nd+1, j), nd+1, k) .= val
-                selectdim(selectdim(Ω, nd+1, k), nd+1, j) .= val
+                selectdim(selectdim(Ω, nd+1, k), nd+1, j) .= selectdim(selectdim(Ω, nd+1, j), nd+1, k)
             end
             l += 1
         end
