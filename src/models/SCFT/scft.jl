@@ -93,39 +93,45 @@ function effective_volume(system::SCFTSystem, dz)
 end
 
 """
-    compute_partition_functions(system::SCFTSystem, w, w_bulk, q_fwd, dz)
+    compute_partition_functions(system::SCFTSystem, w, w_bulk, q_in, dz)
 
 Compute single-molecule partition functions from shifted propagators (chains and solvents, unified — a solvent is just an `N=1` molecule type flowing through the same propagator arrays):
 ```
-Q̃_c = (1/V_eff) ∫ q̃_fwd[c](:, N_c) dr
+Q̃_c = (1/V_eff) ∫ q̃_in[c](:, root_c) dr
 ```
-where `q̃` is the propagator computed with shifted fields `Δw = w - w_bulk`.
+where `q̃_in` is the bottom-up propagator computed with shifted fields `Δw = w - w_bulk`
+(see `_dgc_tree_sweep!`, `src/propagator/discrete_gaussian_chain.jl`), and `root_c` is
+chain `c`'s tree root (`chain_root`) — `q_in` at the root already folds in every branch
+via the bottom-up recursion, so (unlike a linear chain's single well-defined "end") no
+particular node needs picking beyond a valid root; by the sum-product invariant the
+result doesn't depend on which node `compute_levels` happened to choose as root. For a
+linear chain this reduces to evaluating the old forward propagator at its chain end.
 For a uniform system at bulk densities, `Q̃ ≈ 1`.
 
 Returns `Q::Vector{Float64}`, one entry per molecule type (`system.model.components`).
 """
-function compute_partition_functions(system::SCFTSystem, w, w_bulk, q_fwd, dz;
+function compute_partition_functions(system::SCFTSystem, w, w_bulk, q_in, dz;
                                      weights=nothing, V_eff=nothing, exp_field=nothing)
     nd = dimension(system)
-    sequence = system.species.sequence
-    nmol = length(sequence)
+    species = system.species
+    nmol = length(species.sequence)
     FT = fptype(system.options)
 
     V_eff = V_eff !== nothing ? FT(V_eff) : FT(effective_volume(system, dz))
 
     Q = Vector{FT}(undef, nmol)
     for c in 1:nmol
-        Nc = length(sequence[c])
+        i_root = chain_root(species, c)
         if weights !== nothing
             # GPU-friendly: dot product with precomputed weight array — no host transfer
-            Q[c] = sum(selectdim(q_fwd[c], nd+1, Nc) .* weights) / V_eff
+            Q[c] = sum(selectdim(q_in[c], nd+1, i_root) .* weights) / V_eff
         else
             # Periodic trapezoidal rule (matches `effective_volume`'s periodic convention,
-            # since q_fwd lives on the periodic FFT grid — Simpson's `∫` assumes a
+            # since q_in lives on the periodic FFT grid — Simpson's `∫` assumes a
             # non-periodic domain with duplicated endpoints and is NOT consistent with
             # `dz = L/ngrid`/`V_eff = prod(dz)*prod(ngrid)` here).
-            q_end = selectdim(q_fwd[c], nd+1, Nc)
-            Q[c] = sum(q_end) * prod(dz) / V_eff
+            q_root = selectdim(q_in[c], nd+1, i_root)
+            Q[c] = sum(q_root) * prod(dz) / V_eff
         end
     end
 
@@ -133,17 +139,19 @@ function compute_partition_functions(system::SCFTSystem, w, w_bulk, q_fwd, dz;
 end
 
 """
-    compute_densities!(system::SCFTSystem, w, w_bulk, q_fwd, q_bwd, Q, ρ)
+    compute_densities!(system::SCFTSystem, w, w_bulk, q_in, q_out, Q, ρ)
 
 Compute density profiles from shifted propagators and partition functions, for every molecule type (chains and solvents, unified — a solvent is just an `N=1` molecule type, for which this formula reduces exactly to the old separate solvent formulas):
 ```
-ρ_α(r) += prefactor * Σ_{s: α(s)=α} q̃_fwd(r,s) * q̃_bwd(r, N+1-s) * exp(Δw_α(r))
+ρ_α(r) += prefactor * Σ_{k: α(k)=α} q̃_in(r,k) * q̃_out(r,k) * exp(Δw_α(r))
 ```
-where `Δw = w - w_bulk`, and the exp(Δw) corrects for double-counting of the Boltzmann weight at segment s.
-The shift factors cancel between numerator and denominator (Q̃), keeping values near O(1). 
+where `Δw = w - w_bulk`, and the exp(Δw) corrects for double-counting of the Boltzmann weight at node k (see `_dgc_tree_sweep!`'s docstring — `q_in`/`q_out` are node-indexed, not
+position-indexed, so no `N+1-s` mirroring is needed here; a linear chain's `q_out` is
+exactly the old `q_bwd` re-indexed from chain-position order into node order).
+The shift factors cancel between numerator and denominator (Q̃), keeping values near O(1).
 `prefactor = n_molecules/(V_eff*Q̃)` (canonical) or `bulk_density/(N*Q̃)` (grand canonical).
 """
-function compute_densities!(system::SCFTSystem, w, w_bulk, q_fwd, q_bwd, Q, ρ;
+function compute_densities!(system::SCFTSystem, w, w_bulk, q_in, q_out, Q, ρ;
                             V_eff=nothing, exp_field=nothing, inv_exp_field=nothing)
     nd = dimension(system)
     species = system.species
@@ -168,15 +176,15 @@ function compute_densities!(system::SCFTSystem, w, w_bulk, q_fwd, q_bwd, Q, ρ;
             prefactor = FT(species.molecule_bulk_density[c]) / (FT(Nc) * Qc)
         end
 
-        # For each segment, add contribution to the appropriate species.
+        # For each node, add contribution to the appropriate species.
         # Double-count correction: exp(w_α - w_bulk_α) = 1/exp_field[α].
-        # Use precomputed inv_exp_field if available to avoid recomputing per segment.
-        for s in 1:Nc
-            α = seg_spec[s]
+        # Use precomputed inv_exp_field if available to avoid recomputing per node.
+        for k in 1:Nc
+            α = seg_spec[k]
             inv_ef_α = inv_exp_field !== nothing ? inv_exp_field[α] :
                            exp.(selectdim(w, nd+1, α) .- w_bulk[α])
-            selectdim(ρ, nd+1, α) .+= prefactor .* selectdim(q_fwd[c], nd+1, s) .*
-                selectdim(q_bwd[c], nd+1, Nc + 1 - s) .* inv_ef_α
+            selectdim(ρ, nd+1, α) .+= prefactor .* selectdim(q_in[c], nd+1, k) .*
+                selectdim(q_out[c], nd+1, k) .* inv_ef_α
         end
     end
 end

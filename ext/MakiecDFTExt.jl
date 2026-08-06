@@ -347,7 +347,7 @@ function Makie.plot(system::cDFT.AbstractcDFTSystem, structure::Union{cDFT.DFTSt
     return Makie.FigureAxisPlot(fig, ax, plt)
 end
 
-function Makie.plot(system::Union{cDFT.DFTSystem,cDFT.DGTSystem}, structure::cDFT.DFTStructure{2,cDFT.Cartesian,M}, profiles; x_units=:normalized, y_units=:normalized, latex=false, plot_by=:bead, color_by=:bead, color_scheme=cDFT.CDFT_DEFAULT_COLORS, font=nothing, width=:single, dpi=cDFT.CDFT_DPI, grid=false, equilibrium_densities=nothing, only=nothing) where M
+function Makie.plot(system::Union{cDFT.DFTSystem,cDFT.DGTSystem,cDFT.SCFTSystem}, structure::cDFT.DFTStructure{2,cDFT.Cartesian,M}, profiles; x_units=:normalized, y_units=:normalized, latex=false, plot_by=:bead, color_by=:bead, color_scheme=cDFT.CDFT_DEFAULT_COLORS, font=nothing, width=:single, dpi=cDFT.CDFT_DPI, grid=false, equilibrium_densities=nothing, only=nothing) where M
     _check_profile_color_by(plot_by, color_by)
     structure = system.structure
     model = system.model
@@ -439,7 +439,7 @@ function Makie.plot(system::Union{cDFT.DFTSystem,cDFT.DGTSystem}, structure::cDF
     return Makie.FigureAxisPlot(fig, ax, plt)
 end
 
-function Makie.plot(system::Union{cDFT.DFTSystem,cDFT.DGTSystem}, structure::cDFT.DFTStructure{3,cDFT.Cartesian,M}, profiles; x_units=:normalized, y_units=:normalized, latex=false, plot_by=:bead, color_by=:bead, color_scheme=cDFT.CDFT_DEFAULT_COLORS, font=nothing, width=:single, dpi=cDFT.CDFT_DPI, grid=false, equilibrium_densities=nothing, only=nothing) where M
+function Makie.plot(system::Union{cDFT.DFTSystem,cDFT.DGTSystem,cDFT.SCFTSystem}, structure::cDFT.DFTStructure{3,cDFT.Cartesian,M}, profiles; x_units=:normalized, y_units=:normalized, latex=false, plot_by=:bead, color_by=:bead, color_scheme=cDFT.CDFT_DEFAULT_COLORS, font=nothing, width=:single, dpi=cDFT.CDFT_DPI, grid=false, equilibrium_densities=nothing, only=nothing) where M
     _check_profile_color_by(plot_by, color_by)
     structure = system.structure
     model = system.model

@@ -51,7 +51,8 @@ struct problem type for all DFT and DGT systems.
 function DFTProblem(system;
             log_interval   :: Int  = 0,
             save_interval  :: Int  = 0,
-            save_callback   ::C    = nothing,) where C
+            save_callback   ::C    = nothing,
+            kwargs...) where C
     @assert log_interval >= 0
     @assert save_interval >= 0
     save_interval > 0 && (@assert save_callback != nothing)
@@ -85,15 +86,16 @@ function SCFTProblem(system;
             quadrature     :: Symbol = :trapz,
             log_interval   :: Int    = 0,
             save_interval  :: Int    = 0,
-            save_callback   ::C      = nothing,) where C
+            save_callback   ::C      = nothing,
+            kwargs...) where C
     @assert log_interval >= 0
     @assert save_interval >= 0
     save_interval > 0 && (@assert save_callback != nothing)
     return SCFTProblem(system,quadrature,log_interval,save_interval,save_callback)
 end
 
-cDFTProblem(system::Union{DFTSystem,DGTSystem,ElectrolyteDFTSystem};kwargs...) = DFTProblem(system,kwargs...)
-cDFTProblem(system::SCFTSystem;kwargs...) = SCFTProblem(system,kwargs...)
+cDFTProblem(system::Union{DFTSystem,DGTSystem,ElectrolyteDFTSystem};kwargs...) = DFTProblem(system;kwargs...)
+cDFTProblem(system::SCFTSystem;kwargs...) = SCFTProblem(system;kwargs...)
 
 """
     get_new_profile!(system, ρ, δfδρ_res, caches)
@@ -276,12 +278,12 @@ Given the current mean-field potential `w`:
 - evaluate the new field guess `caches.w_new` from that density.
 
 `caches` is a named tuple of buffers preallocated once outside the iteration loop:
-`w_new, w_bulk, dz, cache_external, q_fwd, q_bwd, buf_r, buf_c, P, iP, weights, V_eff, exp_field, inv_exp_field, scratch`.
+`w_new, w_bulk, dz, cache_external, q_in, q_out, buf_r, buf_c, child_buf, P, iP, weights, V_eff, exp_field, inv_exp_field, scratch`.
 
 Returns `Q` (one partition function per molecule type).
 """
 function get_new_profile!(system::SCFTSystem, ρ, w, caches)
-    (; w_new, w_bulk, dz, cache_external, q_fwd, q_bwd, buf_r, buf_c, P, iP,
+    (; w_new, w_bulk, dz, cache_external, q_in, q_out, buf_r, buf_c, child_buf, P, iP,
        weights, V_eff, exp_field, inv_exp_field, scratch) = caches
     nd = dimension(system)
     FT = eltype(ρ)
@@ -294,12 +296,12 @@ function get_new_profile!(system::SCFTSystem, ρ, w, caches)
         @. inv_exp_field[α] = one(FT) / exp_field[α]
     end
 
-    cache_propagator = (q_fwd, q_bwd, buf_r, buf_c, P, iP)
+    cache_propagator = (q_in, q_out, buf_r, buf_c, child_buf, P, iP)
     propagate!(system, ρ, w, cache_propagator;
               w_bulk=w_bulk, exp_field=exp_field)
-    Q = compute_partition_functions(system, w, w_bulk, q_fwd, dz;
+    Q = compute_partition_functions(system, w, w_bulk, q_in, dz;
                                weights=weights, V_eff=V_eff, exp_field=exp_field)
-    compute_densities!(system, w, w_bulk, q_fwd, q_bwd, Q, ρ;
+    compute_densities!(system, w, w_bulk, q_in, q_out, Q, ρ;
                        V_eff=V_eff, exp_field=exp_field, inv_exp_field=inv_exp_field)
     compute_fields!(system, ρ, w_new; scratch=scratch)
     # No-ops today (system.external_field is always nothing — see SCFTSystem's docstring);
@@ -323,13 +325,13 @@ function converge!(prob::SCFTProblem{S}, method::AASol, ρ::AbstractArray) where
     # since it's a solve-time choice, not a system invariant.
     w, cache_model, cache_external, cache_propagator = preallocate(system, ρ; quadrature = prob.quadrature)
     (; w_new, weights, V_eff, w_bulk, scratch, exp_field, inv_exp_field) = cache_model
-    q_fwd, q_bwd, buf_r, buf_c, P, iP = cache_propagator
+    q_in, q_out, buf_r, buf_c, child_buf, P, iP = cache_propagator
 
     compute_fields!(system, ρ, w; scratch = scratch)
 
     # Bundle the buffers preallocated above into a single cache passed to
     # get_new_profile! every iteration.
-    caches = (; w_new, w_bulk, dz, cache_external, q_fwd, q_bwd, buf_r, buf_c, P, iP,
+    caches = (; w_new, w_bulk, dz, cache_external, q_in, q_out, buf_r, buf_c, child_buf, P, iP,
               weights, V_eff, exp_field, inv_exp_field, scratch)
 
     iter_count = Ref(0)

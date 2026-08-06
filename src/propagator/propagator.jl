@@ -26,8 +26,12 @@ end
 """
     DiscreteGaussianChainPropagator <: DFTPropagator
 
-Discrete Gaussian chain propagator for linear polymer chains. Computes forward
-and backward propagators using Gaussian transition probabilities via FFT.
+Discrete Gaussian chain propagator for linear or branched-tree polymer chains. Computes
+bottom-up (`q_in`) and top-down (`q_out`) propagators using Gaussian transition
+probabilities via FFT, swept over each chain's bond tree (see `_dgc_tree_sweep!`,
+`src/propagator/discrete_gaussian_chain.jl`) — the same tree-traversal convention
+`TangentHSPropagator` uses, driven by `species.levels`/`species.i_groups`/
+`species.n_intergroups`.
 
 # Fields
 - `kernel_map`: Dictionary mapping species pairs `(i, j)` (sorted) to Fourier-space Gaussian kernels.

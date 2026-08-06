@@ -26,26 +26,7 @@ function get_species(model::SAFTgammaMie,structure::DFTStructure)
     μres = Clapeyron.VT_chemical_potential_res(model, 1/sum(ρbulk), temperature, ρbulk./sum(ρbulk)) / Clapeyron.R̄ / temperature
     nbeads = length.(model.groups.groups)
 
-    levels = zeros(Int, sum(nbeads))
-
-    for i in @comps
-        i_groups = model.groups.i_groups[i]
-        bond_mat = Bool.(model.groups.n_intergroups[i])
-        nbonds = sum(bond_mat,dims=2)[:]
-        is_leaf = nbonds .== 1
-        i_root = i_groups[findfirst(nbonds[i_groups] .== maximum(nbonds[i_groups]))]
-        levels[i_root] = 1
-    
-        idx_current_level = i_root
-        is_bonded = bond_mat[idx_current_level,:]
-        k = 1
-        while any(levels[i_groups] .== 0)
-            levels[is_bonded] .= k+1
-            idx_next_level = findall(levels .== k+1 .&& .!(is_leaf))
-            is_bonded = (sum(bond_mat[idx_next_level,:],dims=1)[:].==1 .&& levels.==0)
-            k+=1
-        end
-    end
+    levels = compute_levels(model)
     return SAFTgammaMieSpecies(nbeads,HSd,levels,ρbulk,μres)
 end
 
