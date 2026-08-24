@@ -1,4 +1,4 @@
-using Test, cDFT, FFTW
+using Test, ClassicalDFT, FFTW
 
 # Collapses the model/mol_structure/structure/system construction repeated across nearly
 # every SCFT testset. `chain_specs` is a list of `(name, group_counts)` pairs, e.g.
@@ -10,20 +10,20 @@ function build_scft_system(chain_specs, chi; rho0=1.0, kappa=20.0, b=ones(size(c
                             L=10.0, ngrid=65, rhobulk_seed=ones(length(chain_specs)),
                             ensemble=fill(:canonical, length(chain_specs)),
                             n_molecules=ones(length(chain_specs)),
-                            structure=cDFT.Uniform1DCart((0.0,0.0), rhobulk_seed, [0.0,L], ngrid),
+                            structure=ClassicalDFT.Uniform1DCart((0.0,0.0), rhobulk_seed, [0.0,L], ngrid),
                             mol_structure_strings=nothing)
-    model = cDFT.SCFTLatticeFluid(chain_specs, b, chi; rho0=rho0, kappa=kappa)
+    model = ClassicalDFT.SCFTLatticeFluid(chain_specs, b, chi; rho0=rho0, kappa=kappa)
     mol_structure = if mol_structure_strings !== nothing
-        Dict(name => cDFT.custom_structure(s) for (name, s) in mol_structure_strings)
+        Dict(name => ClassicalDFT.custom_structure(s) for (name, s) in mol_structure_strings)
     else
-        Dict(name => cDFT.custom_structure(join(letter^n for (letter,n) in groups))
+        Dict(name => ClassicalDFT.custom_structure(join(letter^n for (letter,n) in groups))
              for (name, groups) in chain_specs)
     end
-    return cDFT.SCFTSystem(model, structure, cDFT.DFTOptions();
+    return ClassicalDFT.SCFTSystem(model, structure, ClassicalDFT.DFTOptions();
         mol_structure=mol_structure, ensemble=ensemble, n_molecules=n_molecules)
 end
 
-# FFT-based reference convolution, independent of cDFT's own `convolve!`/propagator
+# FFT-based reference convolution, independent of ClassicalDFT's own `convolve!`/propagator
 # machinery — used by the brute-force chain-integral checks below.
 function _ref_conv(f::Vector{Float64}, kernel, ngrid::Int)
     P  = plan_rfft(zeros(ngrid), 1:1)
@@ -35,17 +35,17 @@ end
 
     @testset "expand_model / get_species error paths" begin
         chi = [0.0 10.0; 10.0 0.0]
-        model = cDFT.SCFTLatticeFluid([("diblock", ["A"=>3, "B"=>2])], [1.0, 1.2], chi; rho0=1.0, kappa=20.0)
+        model = ClassicalDFT.SCFTLatticeFluid([("diblock", ["A"=>3, "B"=>2])], [1.0, 1.2], chi; rho0=1.0, kappa=20.0)
 
         # a mol_structure inconsistent with the grouplist composition must throw
-        bad_mol_structure = Dict("diblock" => cDFT.custom_structure("AABBB"))
-        @test_throws AssertionError cDFT.expand_model(model, bad_mol_structure)
+        bad_mol_structure = Dict("diblock" => ClassicalDFT.custom_structure("AABBB"))
+        @test_throws AssertionError ClassicalDFT.expand_model(model, bad_mol_structure)
 
         # a branched mol_structure is now accepted (DiscreteGaussianChainPropagator walks
         # the resulting bond tree — see SCFTSpecies's docstring) rather than rejected.
-        branched_model = cDFT.SCFTLatticeFluid([("chain", ["A"=>3, "B"=>2])], [1.0, 1.2], chi; rho0=1.0, kappa=20.0)
-        branched_structure = Dict("chain" => cDFT.custom_structure("AA(B)AB"))
-        expanded = cDFT.expand_model(branched_model, branched_structure)
+        branched_model = ClassicalDFT.SCFTLatticeFluid([("chain", ["A"=>3, "B"=>2])], [1.0, 1.2], chi; rho0=1.0, kappa=20.0)
+        branched_structure = Dict("chain" => ClassicalDFT.custom_structure("AA(B)AB"))
+        expanded = ClassicalDFT.expand_model(branched_model, branched_structure)
         @test length(expanded.groups.flattenedgroups) == 5
         @test sum(expanded.groups.n_intergroups[1]) == 2 * 4  # 4 bonds, symmetric matrix
     end
@@ -76,7 +76,7 @@ end
         ρ_A, ρ_B = 0.6, 0.4
         ρ = hcat(fill(ρ_A, ngrid), fill(ρ_B, ngrid))
         w = similar(ρ)
-        cDFT.compute_fields!(system, ρ, w)
+        ClassicalDFT.compute_fields!(system, ρ, w)
 
         # Expected: w_A = χ_AB/ρ₀ * ρ_B + ζ/ρ₀ * (ρ₊/ρ₀ - 1)
         ρ_total = ρ_A + ρ_B
@@ -87,15 +87,15 @@ end
         @test all(x -> isapprox(x, expected_wB; atol=1e-12), w[:, 2])
 
         # The bulk (scalar) formula must agree with the spatial formula above
-        w_bulk_check = cDFT.compute_bulk_fields(system.model, [ρ_A, ρ_B])
+        w_bulk_check = ClassicalDFT.compute_bulk_fields(system.model, [ρ_A, ρ_B])
         @test w_bulk_check[1] ≈ expected_wA atol = 1e-12
         @test w_bulk_check[2] ≈ expected_wB atol = 1e-12
 
         # 3-species case, direct bulk-fields check (no full system needed)
         chi3 = [0.0 10.0 5.0; 10.0 0.0 3.0; 5.0 3.0 0.0]
-        model3 = cDFT.SCFTLatticeFluid([("chain", ["A"=>1, "B"=>1, "S"=>1])], ones(3), chi3; rho0=rho0, kappa=kappa)
+        model3 = ClassicalDFT.SCFTLatticeFluid([("chain", ["A"=>1, "B"=>1, "S"=>1])], ones(3), chi3; rho0=rho0, kappa=kappa)
         bulk3 = [0.4, 0.3, 0.3]
-        w_bulk3 = cDFT.compute_bulk_fields(model3, bulk3)
+        w_bulk3 = ClassicalDFT.compute_bulk_fields(model3, bulk3)
         ρ_total3 = sum(bulk3)
         comp3 = (kappa / rho0) * (ρ_total3 / rho0 - 1.0)
         @test w_bulk3[1] ≈ chi3[1,2]/rho0*bulk3[2] + chi3[1,3]/rho0*bulk3[3] + comp3
@@ -113,9 +113,9 @@ end
             ensemble=[:canonical], n_molecules=[1.0], ngrid=65)
         ngrid = system.structure.ngrid[1]
 
-        bulk = cDFT.compute_bulk_densities(system)
+        bulk = ClassicalDFT.compute_bulk_densities(system)
         ρ = hcat(fill(bulk[1], ngrid), fill(bulk[2], ngrid))
-        cDFT.converge!(system, ρ)
+        ClassicalDFT.converge!(system, ρ)
 
         @test all(x -> isapprox(x, bulk[1]; rtol=1e-6), ρ[:, 1])
         @test all(x -> isapprox(x, bulk[2]; rtol=1e-6), ρ[:, 2])
@@ -129,18 +129,18 @@ end
             ensemble=[:canonical], n_molecules=[1.0], ngrid=65)
         ngrid = system.structure.ngrid[1]
 
-        bulk = cDFT.compute_bulk_densities(system)
+        bulk = ClassicalDFT.compute_bulk_densities(system)
         ρ = hcat(fill(bulk[1], ngrid), fill(bulk[2], ngrid))
-        w_bulk = cDFT.compute_bulk_fields(system.model, bulk)
+        w_bulk = ClassicalDFT.compute_bulk_fields(system.model, bulk)
         w = hcat(fill(w_bulk[1], ngrid), fill(w_bulk[2], ngrid))
         # At the uniform fixed point Δw=0 everywhere, so every propagator value is
         # exp(0)=1 and Q̃=1 exactly (not just approximately) — no propagation needed.
         Q = [1.0]
 
-        H = cDFT.free_energy(system, ρ, w, Q)
+        H = ClassicalDFT.free_energy(system, ρ, w, Q)
 
-        dz = cDFT.structure_dz(system.structure)
-        V_eff = cDFT.effective_volume(system, dz)
+        dz = ClassicalDFT.structure_dz(system.structure)
+        V_eff = ClassicalDFT.effective_volume(system, dz)
         U_int_expected = chi[1,2] * bulk[1] * bulk[2] * V_eff / rho0
         ρ_total = bulk[1] + bulk[2]
         U_comp_expected = (kappa / 2.0) * (ρ_total / rho0 - 1.0)^2 * V_eff
@@ -157,12 +157,12 @@ end
             ensemble=[:canonical], n_molecules=[10.0], ngrid=64)
         ngrid = system.structure.ngrid[1]
 
-        ρ = cDFT.initialize_profiles(system)
+        ρ = ClassicalDFT.initialize_profiles(system)
         @test size(ρ) == (ngrid, 2)
         @test all(ρ[:, 1] .== ρ[1, 1])
         @test all(ρ[:, 2] .== ρ[1, 2])
 
-        ρ_pert = cDFT.initialize_profiles(system; noise=0.01)
+        ρ_pert = ClassicalDFT.initialize_profiles(system; noise=0.01)
         @test size(ρ_pert) == (ngrid, 2)
         @test !all(ρ_pert[:, 1] .== ρ_pert[1, 1])
     end
@@ -178,9 +178,9 @@ end
             rhobulk_seed=[1.0, 0.3], ngrid=65)
         ngrid = system.structure.ngrid[1]
 
-        bulk = cDFT.compute_bulk_densities(system)
+        bulk = ClassicalDFT.compute_bulk_densities(system)
         ρ = hcat((fill(b, ngrid) for b in bulk)...)
-        cDFT.converge!(system, ρ)
+        ClassicalDFT.converge!(system, ρ)
 
         # Solvent density should stay at its bulk value
         @test all(x -> isapprox(x, bulk[3]; rtol=1e-6), ρ[:, 3])
@@ -193,11 +193,11 @@ end
         system = build_scft_system([("diblock", ["A"=>5, "B"=>5])], chi;
             ensemble=[:canonical], n_molecules=[1.0], ngrid=65)
 
-        bulk = cDFT.compute_bulk_densities(system)
-        ρ = cDFT.initialize_profiles(system; noise=0.05)
+        bulk = ClassicalDFT.compute_bulk_densities(system)
+        ρ = ClassicalDFT.initialize_profiles(system; noise=0.05)
         @test maximum(abs.(ρ[:, 1] .- bulk[1])) > 0.001  # verify it's actually perturbed
 
-        cDFT.converge!(system, ρ)
+        ClassicalDFT.converge!(system, ρ)
 
         @test all(x -> isapprox(x, bulk[1]; rtol=1e-3), ρ[:, 1])
         @test all(x -> isapprox(x, bulk[2]; rtol=1e-3), ρ[:, 2])
@@ -217,10 +217,10 @@ end
         system = build_scft_system([("diblock", ["A"=>N_seg÷2, "B"=>N_seg÷2])], chi;
             ensemble=[:canonical], n_molecules=[n_chains], L=L, ngrid=ngrid)
 
-        bulk = cDFT.compute_bulk_densities(system)
+        bulk = ClassicalDFT.compute_bulk_densities(system)
 
         # Seed with sinusoidal perturbation to break symmetry toward lamellae
-        ρ = cDFT.initialize_profiles(system)
+        ρ = ClassicalDFT.initialize_profiles(system)
         z = range(0, L, length=ngrid)
         amp = 0.1 * bulk[1]
         for i in 1:ngrid
@@ -229,7 +229,7 @@ end
         end
         clamp!(ρ, 1e-10, Inf)
 
-        cDFT.converge!(system, ρ)
+        ClassicalDFT.converge!(system, ρ)
 
         # Density profiles should be strongly non-uniform (microphase separated)
         amp_A = maximum(ρ[:, 1]) - minimum(ρ[:, 1])
@@ -252,11 +252,11 @@ end
         L = 7.0
         ngrid = 33
         n_chains = L / 10
-        structure = cDFT.LamellarStack1DCart((0.0, 0.0), [1.0], [0.0, L], ngrid; core_groups=["A"])
+        structure = ClassicalDFT.LamellarStack1DCart((0.0, 0.0), [1.0], [0.0, L], ngrid; core_groups=["A"])
         system = build_scft_system([("diblock", ["A"=>5, "B"=>5])], [0.0 1.0; 1.0 0.0];
             ensemble=[:canonical], n_molecules=[n_chains], structure=structure)
 
-        ρ = cDFT.initialize_profiles(system)
+        ρ = ClassicalDFT.initialize_profiles(system)
 
         # Morphology-seeded profile must be non-uniform (unlike SCFT's default flat seed)
         @test !all(ρ[:, 1] .== ρ[1, 1])
@@ -322,23 +322,23 @@ end
             z = range(0, L, length=ngrid+1)[1:end-1]
             # A distinct, non-uniform field per species so every bond direction is exercised.
             w = hcat((0.3 .* sin.(2π .* (α) .* z ./ L) .+ 0.05 .* α for α in 1:nspecies)...)
-            w_bulk = cDFT.compute_bulk_fields(system.model, cDFT.compute_bulk_densities(system))
+            w_bulk = ClassicalDFT.compute_bulk_fields(system.model, ClassicalDFT.compute_bulk_densities(system))
             ef = [exp.(w_bulk[α] .- w[:, α]) for α in 1:nspecies]
 
             seg_spec = species.sequence[1]
             ig = species.i_groups[1]
             lev = species.levels[ig]
             local_bonds = species.n_intergroups[1][ig, ig] .!= 0
-            # Reuse cDFT's own R2C (half-complex) kernels directly — _ref_conv expects
+            # Reuse ClassicalDFT's own R2C (half-complex) kernels directly — _ref_conv expects
             # the same half-complex kernel shape _dgc_tree_sweep! uses.
             kernels = system.propagator.kernel_map
 
             q_in_ref, q_out_ref, i_root = ref_tree_sweep(seg_spec, local_bonds, lev, kernels, ef, ngrid)
 
             ρ = ones(ngrid, nspecies)
-            cache_propagator = cDFT.preallocate_propagator(system, system.propagator, ρ, system.options.device)
+            cache_propagator = ClassicalDFT.preallocate_propagator(system, system.propagator, ρ, system.options.device)
             q_in, q_out, buf_r, buf_c, child_buf, P, iP = cache_propagator
-            cDFT.propagate!(system, ρ, w, cache_propagator; w_bulk=w_bulk, exp_field=nothing)
+            ClassicalDFT.propagate!(system, ρ, w, cache_propagator; w_bulk=w_bulk, exp_field=nothing)
 
             for k in 1:length(seg_spec)
                 @test q_in[1][:, k]  ≈ q_in_ref[k]  rtol=1e-10
@@ -346,12 +346,12 @@ end
             end
 
             V_eff = L
-            Q = cDFT.compute_partition_functions(system, w, w_bulk, q_in, cDFT.structure_dz(system.structure); V_eff=V_eff)
+            Q = ClassicalDFT.compute_partition_functions(system, w, w_bulk, q_in, ClassicalDFT.structure_dz(system.structure); V_eff=V_eff)
             Q_ref = sum(q_in_ref[i_root]) * (L/ngrid) / V_eff
             @test Q[1] ≈ Q_ref rtol=1e-10
 
             ρ_actual = similar(ρ)
-            cDFT.compute_densities!(system, w, w_bulk, q_in, q_out, Q, ρ_actual; V_eff=V_eff)
+            ClassicalDFT.compute_densities!(system, w, w_bulk, q_in, q_out, Q, ρ_actual; V_eff=V_eff)
             inv_ef = [exp.(w[:, α] .- w_bulk[α]) for α in 1:nspecies]
             prefactor = n_molecules / (V_eff * Q_ref)
             ρ_ref = zeros(ngrid, nspecies)
@@ -390,10 +390,10 @@ end
             ensemble=[:canonical], n_molecules=[L/n_seg], L=L, ngrid=33,
             mol_structure_strings=Dict("star" => "AAA(AAA)A"))
 
-        bulk = cDFT.compute_bulk_densities(system)
+        bulk = ClassicalDFT.compute_bulk_densities(system)
         ngrid = system.structure.ngrid[1]
         ρ = fill(bulk[1], ngrid, 1)
-        cDFT.converge!(system, ρ)
+        ClassicalDFT.converge!(system, ρ)
 
         @test all(x -> isapprox(x, bulk[1]; rtol=1e-6), ρ[:, 1])
         @test isapprox(bulk[1], rho0; rtol=1e-6)

@@ -1,5 +1,5 @@
 ```@meta
-CurrentModule = cDFT
+CurrentModule = ClassicalDFT
 ```
 
 ## Contents
@@ -11,12 +11,12 @@ Depth = 1
 
 ## Types
 ```@docs
-cDFT.SWeightedDensity
-cDFT.VWeightedDensity
+ClassicalDFT.SWeightedDensity
+ClassicalDFT.VWeightedDensity
 ```
 
 ## Functions
 ```@docs
-cDFT.evaluate_field!
-cDFT.integrate_field!
+ClassicalDFT.evaluate_field!
+ClassicalDFT.integrate_field!
 ```

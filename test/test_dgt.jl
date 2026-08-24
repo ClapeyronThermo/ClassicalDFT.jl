@@ -1,5 +1,5 @@
-using Test, cDFT
-using cDFT.Clapeyron
+using Test, ClassicalDFT
+using ClassicalDFT.Clapeyron
 
 @testset "DGT" begin
 
@@ -12,18 +12,18 @@ using cDFT.Clapeyron
         # database/gradients/ doesn't exist in this repo, so the plain-string constructor
         # throws; the NamedTuple userlocations form bypasses it entirely (same trick
         # test_models.jl already uses for COFFEE).
-        gradient = cDFT.ConstGradient(["water"]; userlocations=(; kappa=[0.0]))
+        gradient = ClassicalDFT.ConstGradient(["water"]; userlocations=(; kappa=[0.0]))
 
         vl = volume(model, p, T, x)
         ρbulk = x/vl
-        L = cDFT.length_scale(model)
+        L = ClassicalDFT.length_scale(model)
 
         structure = Uniform1DCart((p, T), ρbulk, [-10L, 10L], 51)
-        system = cDFT.DGTSystem(model, gradient, structure)
+        system = ClassicalDFT.DGTSystem(model, gradient, structure)
 
-        ρ = cDFT.initialize_profiles(system)
+        ρ = ClassicalDFT.initialize_profiles(system)
         μ1 = Clapeyron.VT_chemical_potential_res(model, 1/sum(ρbulk), T, ρbulk/sum(ρbulk)) / T / Clapeyron.Rgas()
-        μ2 = cDFT.δFδρ_res(system, ρ)
+        μ2 = ClassicalDFT.δFδρ_res(system, ρ)
         @test μ1[1] ≈ μ2[1] rtol = 1e-6
     end
 
@@ -39,22 +39,22 @@ using cDFT.Clapeyron
         model = PCSAFT(["water"])
         vl = volume(model, p, T, x)
         ρbulk = x/vl
-        L = cDFT.length_scale(model)
+        L = ClassicalDFT.length_scale(model)
         structure = Uniform1DCart((p, T), ρbulk, [-10L, 10L], 51)
 
         κ0 = 1e-20
-        gradient0  = cDFT.ConstGradient(["water"]; userlocations=(; kappa=[0.0]))
-        gradient1  = cDFT.ConstGradient(["water"]; userlocations=(; kappa=[κ0]))
-        gradient2  = cDFT.ConstGradient(["water"]; userlocations=(; kappa=[2κ0]))
-        system0 = cDFT.DGTSystem(model, gradient0, structure)
-        system1 = cDFT.DGTSystem(model, gradient1, structure)
-        system2 = cDFT.DGTSystem(model, gradient2, structure)
+        gradient0  = ClassicalDFT.ConstGradient(["water"]; userlocations=(; kappa=[0.0]))
+        gradient1  = ClassicalDFT.ConstGradient(["water"]; userlocations=(; kappa=[κ0]))
+        gradient2  = ClassicalDFT.ConstGradient(["water"]; userlocations=(; kappa=[2κ0]))
+        system0 = ClassicalDFT.DGTSystem(model, gradient0, structure)
+        system1 = ClassicalDFT.DGTSystem(model, gradient1, structure)
+        system2 = ClassicalDFT.DGTSystem(model, gradient2, structure)
 
-        ρ = cDFT.initialize_profiles(system0; noise=0.05)
+        ρ = ClassicalDFT.initialize_profiles(system0; noise=0.05)
 
-        F0 = cDFT.F_res(system0, ρ)
-        F1 = cDFT.F_res(system1, ρ)
-        F2 = cDFT.F_res(system2, ρ)
+        F0 = ClassicalDFT.F_res(system0, ρ)
+        F1 = ClassicalDFT.F_res(system1, ρ)
+        F2 = ClassicalDFT.F_res(system2, ρ)
 
         @test F1 > F0
         @test (F2 - F0) ≈ 2*(F1 - F0) rtol = 1e-6

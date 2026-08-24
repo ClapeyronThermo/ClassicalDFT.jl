@@ -3,7 +3,7 @@ include("external_fields/steele.jl")
 
 evaluate_external_field!(system::DGTSystem, ρ, δfδρ_res, ::Nothing) = nothing
 
-function evaluate_external_field!(system::AbstractcDFTSystem, ρ, δfδρ_res, cache_external)
+function evaluate_external_field!(system::AbstractClassicalDFTSystem, ρ, δfδρ_res, cache_external)
     structure = system.structure
     ngrid = structure.ngrid
     nd = length(ngrid)
@@ -18,7 +18,7 @@ function evaluate_external_field!(system::AbstractcDFTSystem, ρ, δfδρ_res, c
     end
 end
 
-function initialize_profiles!(system::AbstractcDFTSystem,external_field::ExternalFieldModel, ρ)
+function initialize_profiles!(system::AbstractClassicalDFTSystem,external_field::ExternalFieldModel, ρ)
     z = get_coords(system.structure)
     nd = dimension(system.structure)    
     Vext = Adapt.adapt(typeof(ρ),evaluate_external_field!(system.structure, external_field, system.model, ρ, ρ, z))

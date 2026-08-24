@@ -60,6 +60,6 @@ julia> converge!(system, ρ)
 julia> interfacial_tension(system, ρ)
 ```
 """
-interfacial_tension(system::AbstractcDFTSystem, ρ) = surface_tension(system, ρ)
+interfacial_tension(system::AbstractClassicalDFTSystem, ρ) = surface_tension(system, ρ)
 
 export interfacial_tension

@@ -1,16 +1,16 @@
-module GCIdentifierCDFTExt
+module GCIdentifierClassicalDFTExt
 
-using cDFT, GCIdentifier, ChemicalIdentifiers
+using ClassicalDFT, GCIdentifier, ChemicalIdentifiers
 import GCIdentifier: get_expanded_groups, get_mol, get_atoms, __getbondlist, get_grouplist
 import Clapeyron: EoSModel
 
 # Explicit SMILES path — only GCIdentifier needed, not ChemicalIdentifiers
-function cDFT.get_connectivity(model::EoSModel, ss::cDFT.SMILESStructure)
+function ClassicalDFT.get_connectivity(model::EoSModel, ss::ClassicalDFT.SMILESStructure)
     _get_connectivity_from_smiles(model, ss.smiles)
 end
 
 # Auto-detect from chemical name — both GCIdentifier and ChemicalIdentifiers needed.
-# Deliberately *not* named `cDFT.get_connectivity(::EoSModel, ::String)`: cDFT's own
+# Deliberately *not* named `ClassicalDFT.get_connectivity(::EoSModel, ::String)`: ClassicalDFT's own
 # connectivity.jl already defines that exact signature as an error fallback for when this
 # extension isn't loaded, and it looks up and calls this function via `Base.get_extension`
 # at runtime instead.

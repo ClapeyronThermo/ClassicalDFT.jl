@@ -1,6 +1,6 @@
 # Figures for docs/src/tutorials/dynamic_dft.md
 include("common.jl")
-using Clapeyron, cDFT, OrdinaryDiffEqStabilizedRK, CairoMakie
+using Clapeyron, ClassicalDFT, OrdinaryDiffEqStabilizedRK, CairoMakie
 
 model = PCSAFT(["water", "hexane"])
 p, T = 1e5, 290.15
@@ -10,12 +10,12 @@ x, n, _ = tp_flash(model, p, T, [0.5, 0.5], MichelsenTPFlash(equilibrium=:lle, K
 ρ2 = x[2,:] ./ Clapeyron.volume(model, p, T, x[2,:])
 ρb = (ρ1 .+ ρ2) ./ 2
 
-L = cDFT.length_scale(model)
+L = ClassicalDFT.length_scale(model)
 ngrid = 51
-structure = cDFT.Uniform2DCart((p, T), ρb, [-10L 10L; -10L 10L], (ngrid, ngrid))
+structure = ClassicalDFT.Uniform2DCart((p, T), ρb, [-10L 10L; -10L 10L], (ngrid, ngrid))
 system = DFTSystem(model, structure)
 
-ρ0 = cDFT.initialize_profiles(system; noise=0.01)
+ρ0 = ClassicalDFT.initialize_profiles(system; noise=0.01)
 println("initialized profiles with noise=0.01")
 
 prob = ODEProblem(system, ρ0, (0.0, 1e1))

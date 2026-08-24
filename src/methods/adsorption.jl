@@ -1,5 +1,5 @@
 """
-    adsorption(system::AbstractcDFTSystem, ρ)
+    adsorption(system::AbstractClassicalDFTSystem, ρ)
 
 Calculate the (per-species) adsorption of a converged density profile `ρ` at a surface, defined as the excess amount of each species per unit volume of the accessible domain. To get accurate results, the system should be converged first.
 
@@ -34,7 +34,7 @@ end
 """
     adsorption(model::EoSModel, surface::ExternalFieldModel, p, T, n=[1.0])
 
-Calculate the adsorption of a given `model` at conditions `p`, `T` and bulk composition `n`, next to an external field `surface` (e.g. a `Steele` wall). This is a blind calculation that assumes the domain is 1D and cartesian, sets up the system between the wall and the edge of `surface`'s `width`, converges the density profile, and then integrates it via the `AbstractcDFTSystem` method above.
+Calculate the adsorption of a given `model` at conditions `p`, `T` and bulk composition `n`, next to an external field `surface` (e.g. a `Steele` wall). This is a blind calculation that assumes the domain is 1D and cartesian, sets up the system between the wall and the edge of `surface`'s `width`, converges the density profile, and then integrates it via the `AbstractClassicalDFTSystem` method above.
 
 Example:
 ```julia
@@ -46,7 +46,7 @@ julia> adsorption(model, surface, 1e5, 298.15)
 ```
 """
 function adsorption(model::EoSModel, surface::ExternalFieldModel, p, T, n=[1.0])
-    L = cDFT.length_scale(model)
+    L = ClassicalDFT.length_scale(model)
 
     width = surface.params.width[1]
     bounds = [0.7L,width-0.7L]
@@ -54,9 +54,9 @@ function adsorption(model::EoSModel, surface::ExternalFieldModel, p, T, n=[1.0])
     v = volume(model,p,T,n)
     ρ = n./v
 
-    structure = cDFT.Uniform1DCart((p, T), ρ, bounds, (201,))
+    structure = ClassicalDFT.Uniform1DCart((p, T), ρ, bounds, (201,))
 
-    system = cDFT.DFTSystem(model, structure, surface)
+    system = ClassicalDFT.DFTSystem(model, structure, surface)
 
     ρ = initialize_profiles(system)
 

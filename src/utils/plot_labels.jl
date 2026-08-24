@@ -1,9 +1,9 @@
 """
     texlabel(s::AbstractString; upright::Bool=false)
 
-Convert a plot label string (as used by `PlotscDFTExt`/`MakiecDFTExt`) into a LaTeX-rendered
+Convert a plot label string (as used by `PlotsClassicalDFTExt`/`MakieClassicalDFTExt`) into a LaTeX-rendered
 `LaTeXString`. Only implemented once `LaTeXStrings.jl` is loaded — see
-`ext/LaTeXStringscDFTExt.jl`. Called when `latex=true` is passed to `plot(system, ...)`.
+`ext/LaTeXStringsClassicalDFTExt.jl`. Called when `latex=true` is passed to `plot(system, ...)`.
 `upright=true` wraps the result in `\\mathrm{}` so it renders in upright (non-italic) font —
 used for legend entries (species/group names), which are labels rather than math variables.
 When `upright=false` (axis labels), a `"quantity / unit"`-style string has its unit half

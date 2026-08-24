@@ -47,7 +47,7 @@ end
 
 propagate!(system::DGTSystem, δf_res, ρ, ::Nothing) = nothing
 
-function propagate!(system::AbstractcDFTSystem, δf_res, ρ, cache_propagator)
+function propagate!(system::AbstractClassicalDFTSystem, δf_res, ρ, cache_propagator)
     if !(system.propagator isa IdealPropagator)
         return propagate!(system, system.propagator, δf_res, ρ, cache_propagator...)
     end

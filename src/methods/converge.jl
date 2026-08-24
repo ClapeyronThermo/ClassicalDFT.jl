@@ -15,20 +15,20 @@ AASol(system::SCFTSystem;maxit=5000,beta=1e-2,tol=1e-6,anderson_start=1e-2,ander
 
 """
 
-    abstract type cDFTProblem{S} end
-    cDFTProblem(system::S;kwargs...) where S
+    abstract type ClassicalDFTProblem{S} end
+    ClassicalDFTProblem(system::S;kwargs...) where S
 
-Abstract type for all types of cDFT.jl problems.
-A `cDFTProblem` is just a wrapper of a `AbstractcDFTSystem`, along with different options relevant to the system during the convergence phase, and independent of the solver type used.
+Abstract type for all types of ClassicalDFT.jl problems.
+A `ClassicalDFTProblem` is just a wrapper of a `AbstractClassicalDFTSystem`, along with different options relevant to the system during the convergence phase, and independent of the solver type used.
 """
-abstract type cDFTProblem{S} end
+abstract type ClassicalDFTProblem{S} end
 
 #=
 IF we are ever going to solve this system in other ways other than fixed point,
 The option should be here.
 =#
 
-struct DFTProblem{S,C} <: cDFTProblem{S}
+struct DFTProblem{S,C} <: ClassicalDFTProblem{S}
     system::S
     log_interval::Int
     save_interval::Int
@@ -37,7 +37,7 @@ end
 
 """
 
-    DFTProblem{S} <: cDFTProblem{S}
+    DFTProblem{S} <: ClassicalDFTProblem{S}
     DFTProblem(system::S;kwargs...) where S <: Union{DFTSystem,DGTSystem,ElectrolyteDFTSystem}
 
 
@@ -59,7 +59,7 @@ function DFTProblem(system;
     return DFTProblem(system,log_interval,save_interval,save_callback)
 end
 
-struct SCFTProblem{S,C} <: cDFTProblem{S}
+struct SCFTProblem{S,C} <: ClassicalDFTProblem{S}
     system::S
     quadrature::Symbol
     log_interval::Int
@@ -69,7 +69,7 @@ end
 
 """
 
-    SCFTProblem{S} <: cDFTProblem{S}
+    SCFTProblem{S} <: ClassicalDFTProblem{S}
     SCFTProblem(system::S;kwargs...) where S <: SCFTSystem
 
 struct problem type for all SCFT systems.
@@ -94,8 +94,8 @@ function SCFTProblem(system;
     return SCFTProblem(system,quadrature,log_interval,save_interval,save_callback)
 end
 
-cDFTProblem(system::Union{DFTSystem,DGTSystem,ElectrolyteDFTSystem};kwargs...) = DFTProblem(system;kwargs...)
-cDFTProblem(system::SCFTSystem;kwargs...) = SCFTProblem(system;kwargs...)
+ClassicalDFTProblem(system::Union{DFTSystem,DGTSystem,ElectrolyteDFTSystem};kwargs...) = DFTProblem(system;kwargs...)
+ClassicalDFTProblem(system::SCFTSystem;kwargs...) = SCFTProblem(system;kwargs...)
 
 """
     get_new_profile!(system, ρ, δfδρ_res, caches)
@@ -153,9 +153,9 @@ function get_new_profile!(system::Union{DFTSystem,DGTSystem,ElectrolyteDFTSystem
 end
 
 """
-    converge!(system::AbstractcDFTSystem,ρ::AbstractArray,solver;kwargs...)
-    converge!(system::AbstractcDFTSystem,ρ::AbstractArray;kwargs...)
-    converge!(prob::cDFTProblem,ρ::AbstractArray;kwargs...)
+    converge!(system::AbstractClassicalDFTSystem,ρ::AbstractArray,solver;kwargs...)
+    converge!(system::AbstractClassicalDFTSystem,ρ::AbstractArray;kwargs...)
+    converge!(prob::ClassicalDFTProblem,ρ::AbstractArray;kwargs...)
 
 
 For a given system, converge the profiles using the `solver` method. Convergence is achieved by solving the generic equation:
@@ -172,7 +172,7 @@ ln(ρi) = ln(ρi_bulk) + β(μi_res - δFδρ_res)
 
 On SCFT systems, the mean-field potential `w` is iterated instead, and the the density is calculated as a function of `w`.
 
-If only keyword arguments are used, then the problem is solved via the Anderson acceleration routine [aasol](@ref)), The rest of keyword arguments are passed to [`cDFTProblem`](@ref)
+If only keyword arguments are used, then the problem is solved via the Anderson acceleration routine [aasol](@ref)), The rest of keyword arguments are passed to [`ClassicalDFTProblem`](@ref)
 
 ## Anderson arguments
 - `maxit::Int`: Maximum Anderson-phase iterations (also used as the Picard-phase cap, since the Picard phase is expected to exit via `anderson_start` well before either cap in practice).
@@ -188,7 +188,7 @@ If only keyword arguments are used, then the problem is solved via the Anderson 
 - `DGTSytem`            : same as `DFTSystem`
 - `ElectrolyteDFTSystem`: same as `DFTSystem`
 
-## Problem arguments (passed to [`cDFTProblem(system,kwargs...)`](@ref cDFT.cDFTProblem))
+## Problem arguments (passed to [`ClassicalDFTProblem(system,kwargs...)`](@ref ClassicalDFT.ClassicalDFTProblem))
 - `log_interval::Int = 0`: Log the free energy every N iterations (0 = never).
 - `save_interval::Int = 0`: Call `save_callback` every N iterations (0 = never).
 - `save_callback = nothing`: a function of the form `f(iter, ρ_array)` called at each save interval. SCFT systems require the function form `f(iter, ρ_array, w_array)` instead.
@@ -204,18 +204,18 @@ instead of using just the keywords, one can have more granularity by instantiati
 
 ```julia
 solver = AASol(5,rtol = 1e-2,atol = 1e-3,picard_atol = 1e-1,picard_rtol = 1e-1,beta = 0.5, beta_picard = 0.9)
-prob = cDFTProblem(system,log_interval = 5)
+prob = ClassicalDFTProblem(system,log_interval = 5)
 converge!(prob,solver,ρ)
 ```
 """
 function converge! end
 
 #convenience methods
-converge!(system::AbstractcDFTSystem,ρ::AbstractArray;kwargs...) = converge!(cDFTProblem(system;kwargs...),AASol(system;kwargs...),ρ)
-converge!(system::AbstractcDFTSystem,ρ::AbstractArray,solver;kwargs...) = converge!(cDFTProblem(system;kwargs...),solver,ρ)
+converge!(system::AbstractClassicalDFTSystem,ρ::AbstractArray;kwargs...) = converge!(ClassicalDFTProblem(system;kwargs...),AASol(system;kwargs...),ρ)
+converge!(system::AbstractClassicalDFTSystem,ρ::AbstractArray,solver;kwargs...) = converge!(ClassicalDFTProblem(system;kwargs...),solver,ρ)
 
-converge!(prob::cDFTProblem,ρ::AbstractArray,solver) = converge!(prob,solver,ρ)
-converge!(prob::cDFTProblem,ρ::AbstractArray;kwargs...) = converge!(prob,AASol(prob.system;kwargs...),ρ)
+converge!(prob::ClassicalDFTProblem,ρ::AbstractArray,solver) = converge!(prob,solver,ρ)
+converge!(prob::ClassicalDFTProblem,ρ::AbstractArray;kwargs...) = converge!(prob,AASol(prob.system;kwargs...),ρ)
 
 function converge!(prob::DFTProblem{S}, method::AASol, ρ::AbstractArray) where S
     system = prob.system
@@ -224,7 +224,7 @@ function converge!(prob::DFTProblem{S}, method::AASol, ρ::AbstractArray) where 
     #nd = dimension(system)
     #nbeads = size(ρ,nd+1)
 
-    δfδρ_res, cache_model, cache_external, cache_propagator = cDFT.preallocate(system, ρ)
+    δfδρ_res, cache_model, cache_external, cache_propagator = ClassicalDFT.preallocate(system, ρ)
     ln_Gx = similar(ρ)
     caches = (; cache_model, cache_external, cache_propagator, ln_Gx)
 
@@ -380,4 +380,4 @@ function GFix_logger(prob::SCFTProblem, iter_count, ρ, logger_cache::C) where C
     end
 end
 
-export converge!, cDFTProblem, DFTProblem, SCFTProblem
+export converge!, ClassicalDFTProblem, DFTProblem, SCFTProblem

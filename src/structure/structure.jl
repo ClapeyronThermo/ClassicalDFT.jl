@@ -47,7 +47,7 @@ julia> profiles = initialize_profiles(system)
 julia> profiles_perturbed = initialize_profiles(system; noise=0.01)  # for DDFT
 ```
 """
-function initialize_profiles(system::AbstractcDFTSystem; noise::Real=0.0)
+function initialize_profiles(system::AbstractClassicalDFTSystem; noise::Real=0.0)
     ρ = initialize_profiles(system.model,system.structure,system.species,system.options.device,fptype(system.options))
     if system.external_field == nothing
         # pass
@@ -97,7 +97,7 @@ end
     initialize_profiles(model::EoSModel, structure::Union{Uniform1DCart,...}, species::SCFTSpecies, device, FP)
 
 SCFT-aware override of the generic per-structure `Uniform*Cart` seeding below: reads the already-correct, precomputed per-species bulk density (`species.bulk_density`, from`get_species`) directly, rather than replicating `structure.ρbulk[component]` unsplit across every species of that molecule type (correct for the DFT family's expanded, per-bead-occurrence indexing; wrong for SCFT's per-species-letter aggregation). 
-Dispatch on `species::SCFTSpecies` (more specific than the untyped `species` the generic methods below take) is what lets `initialize_profiles(system::SCFTSystem; noise=0.0)` — just the generic `initialize_profiles(system::AbstractcDFTSystem;...)` above, no SCFT-specific override needed — build the correct base profile via this same shared entry point, and (together with `_SCFTUnsupportedStructure`'s guard now living in `SCFTSystem`'s constructor, `src/models/SCFT/scft.jl`, and the grand-total noise renormalization now generic above) is the last piece that made a full SCFT-specific override unnecessary.
+Dispatch on `species::SCFTSpecies` (more specific than the untyped `species` the generic methods below take) is what lets `initialize_profiles(system::SCFTSystem; noise=0.0)` — just the generic `initialize_profiles(system::AbstractClassicalDFTSystem;...)` above, no SCFT-specific override needed — build the correct base profile via this same shared entry point, and (together with `_SCFTUnsupportedStructure`'s guard now living in `SCFTSystem`'s constructor, `src/models/SCFT/scft.jl`, and the grand-total noise renormalization now generic above) is the last piece that made a full SCFT-specific override unnecessary.
 `LamellarStack*`/`HexLattice*`/`BCC3DCart`/`Gyroid3DCart` need no equivalent override:
 `src/structure/morphology.jl`'s `_fill_morphology!` is already per-species-aware
 (`sign[j]` differs per species `j` within a chain), unlike the `Uniform*` functions below.

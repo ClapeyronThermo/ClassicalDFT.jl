@@ -1,5 +1,5 @@
 ```@meta
-CurrentModule = cDFT
+CurrentModule = ClassicalDFT
 ```
 
 ## Contents
@@ -12,8 +12,8 @@ Depth = 1
 ## System types
 
 ```@docs
-cDFT.DFTSystem
-cDFT.DGTSystem
-cDFT.ElectrolyteDFTSystem
-cDFT.SCFTSystem
+ClassicalDFT.DFTSystem
+ClassicalDFT.DGTSystem
+ClassicalDFT.ElectrolyteDFTSystem
+ClassicalDFT.SCFTSystem
 ```

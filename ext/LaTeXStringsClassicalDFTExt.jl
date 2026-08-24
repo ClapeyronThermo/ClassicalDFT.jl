@@ -1,6 +1,6 @@
-module LaTeXStringscDFTExt
+module LaTeXStringsClassicalDFTExt
 
-using cDFT
+using ClassicalDFT
 using LaTeXStrings
 
 const _UNICODE_TO_LATEX = (
@@ -25,7 +25,7 @@ function _texbody(s::AbstractString)
     return replace(out, "-" => "‐")
 end
 
-function cDFT.texlabel(s::String; upright::Bool=false)
+function ClassicalDFT.texlabel(s::String; upright::Bool=false)
     if upright
         # \; forces a visible math-mode space -- a literal space inside \mathrm{} is not
         # guaranteed to survive MathTeXEngine's parser the way it would in real LaTeX.

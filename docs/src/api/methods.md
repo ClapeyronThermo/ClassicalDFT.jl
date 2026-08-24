@@ -1,5 +1,5 @@
 ```@meta
-CurrentModule = cDFT
+CurrentModule = ClassicalDFT
 ```
 
 ## Contents
@@ -12,23 +12,23 @@ Depth = 1
 ## Solvers
 
 ```@docs
-cDFT.cDFTProblem
-cDFT.DFTProblem
-cDFT.SCFTProblem
-cDFT.converge!
+ClassicalDFT.ClassicalDFTProblem
+ClassicalDFT.DFTProblem
+ClassicalDFT.SCFTProblem
+ClassicalDFT.converge!
 ```
 
 ### Anderson solver
 
 ```@docs
-cDFT.aasol
-cDFT.AASol
+ClassicalDFT.aasol
+ClassicalDFT.AASol
 ```
 
 ## Properties
 
 ```@docs
-cDFT.surface_tension
-cDFT.interfacial_tension
-cDFT.adsorption
+ClassicalDFT.surface_tension
+ClassicalDFT.interfacial_tension
+ClassicalDFT.adsorption
 ```

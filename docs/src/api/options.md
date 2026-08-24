@@ -1,5 +1,5 @@
 ```@meta
-CurrentModule = cDFT
+CurrentModule = ClassicalDFT
 ```
 
 ## Contents
@@ -11,10 +11,10 @@ Depth = 1
 
 ## Types
 ```@docs
-cDFT.DFTOptions
+ClassicalDFT.DFTOptions
 ```
 
 ## Functions
 ```@docs
-cDFT.fptype
+ClassicalDFT.fptype
 ```

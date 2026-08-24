@@ -1,6 +1,6 @@
-module MetalcDFTExt
+module MetalClassicalDFTExt
 
-using cDFT
+using ClassicalDFT
 using Metal
 
 # Enzyme forward-mode-differentiated kernels (both :forward and :forward_batch) crash
@@ -9,6 +9,6 @@ using Metal
 # Enzyme reverse-mode compiles and runs correctly for the identical math. Default to
 # :reverse on Metal until that's fixed upstream; users can still opt into :forward /
 # :forward_batch explicitly (e.g. for benchmarking) via DFTOptions(device, ad_mode).
-cDFT.DFTOptions(::Metal.MetalBackend) = cDFT.DFTOptions(MetalBackend(); ad_mode = :reverse, precision = Float32)
+ClassicalDFT.DFTOptions(::Metal.MetalBackend) = ClassicalDFT.DFTOptions(MetalBackend(); ad_mode = :reverse, precision = Float32)
 
 end

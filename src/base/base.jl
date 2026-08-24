@@ -6,13 +6,13 @@ abstract type ExternalFieldModel end
 abstract type GradientModel end
 
 """
-    AbstractcDFTSystem
+    AbstractClassicalDFTSystem
 
-Supertype for every system cDFT.jl can converge via [`converge!`](@ref): [`DFTSystem`](@ref), [`DGTSystem`](@ref), [`ElectrolyteDFTSystem`](@ref) and [`SCFTSystem`](@ref)
+Supertype for every system ClassicalDFT.jl can converge via [`converge!`](@ref): [`DFTSystem`](@ref), [`DGTSystem`](@ref), [`ElectrolyteDFTSystem`](@ref) and [`SCFTSystem`](@ref)
 """
-abstract type AbstractcDFTSystem end
+abstract type AbstractClassicalDFTSystem end
 
-const DB_PATH = normpath(Base.pkgdir(cDFT),"database")
+const DB_PATH = normpath(Base.pkgdir(ClassicalDFT),"database")
 
 include("devices.jl")
 include("structure.jl")
@@ -47,7 +47,7 @@ DFTSystem
   device: CPU
 ```
 """
-struct DFTSystem{M<:EoSModel,S<:DFTSpecies,T<:DFTStructure,F,EF,P<:DFTPropagator,O<:DFTOptions,C} <: AbstractcDFTSystem
+struct DFTSystem{M<:EoSModel,S<:DFTSpecies,T<:DFTStructure,F,EF,P<:DFTPropagator,O<:DFTOptions,C} <: AbstractClassicalDFTSystem
     model::M
     species::S
     structure::T
@@ -118,7 +118,7 @@ julia> structure = Uniform1DCart((1e5, 298.15, [1.]), [0, 20L], 201)
 julia> system = DGTSystem(model, gradient, structure)
 ```
 """
-struct DGTSystem{M<:EoSModel,S<:DFTSpecies,T<:DFTStructure,F,EF,G<:GradientModel,O<:DFTOptions,C} <: AbstractcDFTSystem
+struct DGTSystem{M<:EoSModel,S<:DFTSpecies,T<:DFTStructure,F,EF,G<:GradientModel,O<:DFTOptions,C} <: AbstractClassicalDFTSystem
     model::M
     gradient::G
     species::S
@@ -244,7 +244,7 @@ julia> structure = Uniform1DCart((1e5, 298.15, [1.]), [0, 20L], 201)
 julia> system = ElectrolyteDFTSystem(model, structure)
 ```
 """
-struct ElectrolyteDFTSystem{M<:ElectrolyteModel,S<:DFTSpecies,iS<:DFTSpecies,T<:DFTStructure,F,EF,P<:DFTPropagator,O<:DFTOptions,C} <: AbstractcDFTSystem
+struct ElectrolyteDFTSystem{M<:ElectrolyteModel,S<:DFTSpecies,iS<:DFTSpecies,T<:DFTStructure,F,EF,P<:DFTPropagator,O<:DFTOptions,C} <: AbstractClassicalDFTSystem
     model::M
     species::S
     ion_species::iS
@@ -256,7 +256,7 @@ struct ElectrolyteDFTSystem{M<:ElectrolyteModel,S<:DFTSpecies,iS<:DFTSpecies,T<:
     chunksize::Val{C}
 end
 
-struct SCFTSystem{M<:EoSModel, S<:DFTSpecies, T<:DFTStructure, P<:DFTPropagator, O<:DFTOptions, EF} <: AbstractcDFTSystem
+struct SCFTSystem{M<:EoSModel, S<:DFTSpecies, T<:DFTStructure, P<:DFTPropagator, O<:DFTOptions, EF} <: AbstractClassicalDFTSystem
     model::M
     species::S
     structure::T
@@ -315,9 +315,9 @@ end
 
 
 dimension(::Type{Union{DFTSystem{<:Any,<:Any,T},DGTSystem{<:Any,<:Any,T}}}) where T = dimension(T)
-dimension(x::AbstractcDFTSystem) = dimension(x.structure)
+dimension(x::AbstractClassicalDFTSystem) = dimension(x.structure)
 
-length_fields(system::AbstractcDFTSystem) = length_fields(system.chunksize)
+length_fields(system::AbstractClassicalDFTSystem) = length_fields(system.chunksize)
 length_fields(::Val{N}) where N = N
 
 function compute_field_len(fields,nd)

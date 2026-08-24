@@ -1,6 +1,6 @@
 import Clapeyron: a_res
 
-_kernel_type(system::AbstractcDFTSystem) = typeof(system.model)
+_kernel_type(system::AbstractClassicalDFTSystem) = typeof(system.model)
 _kernel_type(system::DGTSystem)          = typeof(system)
 
 """
@@ -91,11 +91,11 @@ function F_res(system::Union{DFTSystem, DGTSystem}, ρ)
 end
 
 """
-    F_res(system::AbstractcDFTSystem, ρ)
+    F_res(system::AbstractClassicalDFTSystem, ρ)
 
 Residual free energy fallback for systems that use the old scalar f_res path (e.g. Electrolyte).
 """
-function F_res(system::AbstractcDFTSystem, ρ)
+function F_res(system::AbstractClassicalDFTSystem, ρ)
     ngrid  = system.structure.ngrid
     model  = system.model
 
@@ -128,7 +128,7 @@ depending on `system.options.device`. When `system.options.ad_mode` is `:forward
 `:forward_batch`, `fwd_cache` must be the `(dn_seeds, df_outs, Val(BATCH))` tuple from
 `preallocate_model`.
 """
-function δFδρ_res!(system::AbstractcDFTSystem, ρ, δfδρ_res,
+function δFδρ_res!(system::AbstractClassicalDFTSystem, ρ, δfδρ_res,
                    n, δf, fft_buf, in_buf, out_buf, P, iP,
                    params, f_val, δf_val, nc, nd, fwd_cache = nothing)
     backend     = system.options.device
@@ -191,7 +191,7 @@ end
 Obtain the functional derivatives of the residual free energy for each component / bead.
 Output is a 2D array `(ngrid, nb)`, normalised by `kB*T`.
 """
-function δFδρ_res(system::AbstractcDFTSystem, ρ)
+function δFδρ_res(system::AbstractClassicalDFTSystem, ρ)
     δfδρ_res, cache_model, cache_external, cache_propagator = preallocate(system, ρ)
     δFδρ_res!(system, ρ, δfδρ_res, cache_model...)
     evaluate_external_field!(system, ρ, δfδρ_res, cache_external)

@@ -115,7 +115,7 @@ function SWeightedDensity(type::Symbol, width::Vector{Float64}, ω::RadialFreque
     return SWeightedDensity(type, width, L, Ω, Q, Q)
 end
 
-function evaluate_field!(system::AbstractcDFTSystem,field::SWeightedDensity, ρ, n, in_buf, out_buf, P, iP)
+function evaluate_field!(system::AbstractClassicalDFTSystem,field::SWeightedDensity, ρ, n, in_buf, out_buf, P, iP)
     backend = system.options.device
     ngrid = system.structure.ngrid
     nd = length(ngrid)
@@ -137,7 +137,7 @@ function evaluate_field!(system::AbstractcDFTSystem,field::SWeightedDensity, ρ,
     @. n = real(n) * NA
 end
 
-function integrate_field!(system::AbstractcDFTSystem, field::SWeightedDensity, profile, δfδρ_res, in_buf, P, iP)
+function integrate_field!(system::AbstractClassicalDFTSystem, field::SWeightedDensity, profile, δfδρ_res, in_buf, P, iP)
     backend = system.options.device
     type = field.type
     ngrid = system.structure.ngrid
@@ -316,7 +316,7 @@ function VWeightedDensity(type::Symbol, width::Vector{Float64}, ω::RadialFreque
     return VWeightedDensity(type, width, L, T, Q, Q)
 end
 
-function evaluate_field!(system::AbstractcDFTSystem, field::VWeightedDensity, ρ, nV, in_buf, out_buf, P::Hankel.QDHT, iP::Hankel.QDHT)
+function evaluate_field!(system::AbstractClassicalDFTSystem, field::VWeightedDensity, ρ, nV, in_buf, out_buf, P::Hankel.QDHT, iP::Hankel.QDHT)
     field.type == :∫ρzdz || error("Unsupported vector weighted density type for spherical/cylindrical coordinates: $(field.type)")
     nd = length(system.structure.ngrid)
     nb = size(ρ,nd+1)
@@ -330,7 +330,7 @@ function evaluate_field!(system::AbstractcDFTSystem, field::VWeightedDensity, ρ
     @. nV = real(nV) * NA
 end
 
-function integrate_field!(system::AbstractcDFTSystem, field::VWeightedDensity, profile, δfδρ_res, in_buf, P::Hankel.QDHT, iP::Hankel.QDHT)
+function integrate_field!(system::AbstractClassicalDFTSystem, field::VWeightedDensity, profile, δfδρ_res, in_buf, P::Hankel.QDHT, iP::Hankel.QDHT)
     field.type == :∫ρzdz || error("Unsupported vector weighted density type for spherical/cylindrical coordinates: $(field.type)")
     nd = length(system.structure.ngrid)
     nb = size(profile,nd+2)
@@ -342,7 +342,7 @@ function integrate_field!(system::AbstractcDFTSystem, field::VWeightedDensity, p
     end
 end
 
-function evaluate_field!(system::AbstractcDFTSystem,field::VWeightedDensity, ρ, nV, in_buf, out_buf, P, iP)
+function evaluate_field!(system::AbstractClassicalDFTSystem,field::VWeightedDensity, ρ, nV, in_buf, out_buf, P, iP)
     backend = system.options.device
 
     ngrid = system.structure.ngrid
@@ -365,7 +365,7 @@ function evaluate_field!(system::AbstractcDFTSystem,field::VWeightedDensity, ρ,
     @. nV = real(nV) * NA
 end
 
-function integrate_field!(system::AbstractcDFTSystem,field::VWeightedDensity, profile, δfδρ_res, in_buf, P, iP)
+function integrate_field!(system::AbstractClassicalDFTSystem,field::VWeightedDensity, profile, δfδρ_res, in_buf, P, iP)
     backend = system.options.device
     type = field.type
     ngrid = system.structure.ngrid

@@ -1,5 +1,5 @@
-module SciMLBasecDFTExt
-    import cDFT
+module SciMLBaseClassicalDFTExt
+    import ClassicalDFT
     import SciMLBase
     import KernelAbstractions as KA
     import FFTW
@@ -7,12 +7,12 @@ module SciMLBasecDFTExt
 
     ################### DYNAMIC DENSITY FUNCTIONAL THEORY ###################
 
-    function SciMLBase.ODEProblem(system::cDFT.AbstractcDFTSystem, ρ, tspan, kwargs...)
-        FP = cDFT.fptype(system.options)
+    function SciMLBase.ODEProblem(system::ClassicalDFT.AbstractClassicalDFTSystem, ρ, tspan, kwargs...)
+        FP = ClassicalDFT.fptype(system.options)
         ngrid    = system.structure.ngrid
         nd       = length(ngrid)
-        L        = FP(cDFT.length_scale(system.model))
-        k        = cDFT.structure_ω(system.structure, system.options.device, FP) .* L
+        L        = FP(ClassicalDFT.length_scale(system.model))
+        k        = ClassicalDFT.structure_ω(system.structure, system.options.device, FP) .* L
 
         map_grad =  2(π .* k .* im)
         _2π² = FP((2π)^2)
@@ -25,17 +25,17 @@ module SciMLBasecDFTExt
         P        = FFTW.plan_fft!(buf)
         iP       = FFTW.plan_ifft!(buf)
         
-        μ, cache_model, cache_external_field, cache_propagator = cDFT.preallocate(system, ρ)
+        μ, cache_model, cache_external_field, cache_propagator = ClassicalDFT.preallocate(system, ρ)
 
         function ddft_rhs_log!(dη, η, params, t)
             @. ρ = exp(clamp(η, -50, 30))
             # println(t, " ", minimum(ρ), " ", maximum(ρ))
             # println(t, " ", minimum(μ), " ", maximum(μ))
 
-            cDFT.δFδρ_res!(system, ρ, μ, cache_model...)
+            ClassicalDFT.δFδρ_res!(system, ρ, μ, cache_model...)
             # println(t, " ", minimum(μ), " ", maximum(μ))
-            cDFT.evaluate_external_field!(system, ρ, μ, cache_external_field)
-            cDFT.propagate!(system, ρ, μ, cache_propagator)
+            ClassicalDFT.evaluate_external_field!(system, ρ, μ, cache_external_field)
+            ClassicalDFT.propagate!(system, ρ, μ, cache_propagator)
 
             for α in axes(η, nd + 1)
                 η_α  = selectdim(η,  nd + 1, α)
@@ -43,16 +43,16 @@ module SciMLBasecDFTExt
                 dη_α = selectdim(dη, nd + 1, α)
 
                 # Laplacians — initialise dη with ∇²η + ∇²μ                
-                cDFT.convolve!(dη_α, η_α, map_lapl, P, iP, buf)
-                cDFT.convolve!(tmp,  μ_α, map_lapl, P, iP, buf)
+                ClassicalDFT.convolve!(dη_α, η_α, map_lapl, P, iP, buf)
+                ClassicalDFT.convolve!(tmp,  μ_α, map_lapl, P, iP, buf)
                 @. dη_α += tmp
 
                 # Gradient terms — accumulate directly
                 for d in 1:nd
-                    cDFT.convolve!(tmp, η_α, selectdim(map_grad, nd+1, d), P, iP, buf)   # tmp = ∇ηd
+                    ClassicalDFT.convolve!(tmp, η_α, selectdim(map_grad, nd+1, d), P, iP, buf)   # tmp = ∇ηd
                     @. dη_α += tmp^2                                # |∇η|²
 
-                    cDFT.convolve!(buf_real, μ_α, selectdim(map_grad, nd+1, d), P, iP, buf)  # buf_real = ∇μd
+                    ClassicalDFT.convolve!(buf_real, μ_α, selectdim(map_grad, nd+1, d), P, iP, buf)  # buf_real = ∇μd
                     @. dη_α += buf_real * tmp                          # ∇μ·∇η
                 end
             end
@@ -61,7 +61,7 @@ module SciMLBasecDFTExt
     end
 
     ######### ALTERNATE CONVERGE! IMPLEMENTATION FOR DDFT STEADY STATES #########
-    # function cDFT.converge!(system::cDFT.AbstractcDFTSystem, ρ, alg::SciMLBase.AbstractODEAlgorithm)
+    # function ClassicalDFT.converge!(system::ClassicalDFT.AbstractClassicalDFTSystem, ρ, alg::SciMLBase.AbstractODEAlgorithm)
     #     cb = TerminateSteadyState(abstol=1e-4, reltol=1e-4)
     #     prob = SciMLBase.ODEProblem(system, log.(ρ), (0.0, 1e6), callback=cb)
     #     sol = DifferentialEquations.solve(prob, alg, save_everystep=false, save_start=false)

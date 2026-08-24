@@ -1,10 +1,10 @@
 # GPU Acceleration
 
-Every free-energy kernel in cDFT is written using
+Every free-energy kernel in ClassicalDFT is written using
 [KernelAbstractions.jl](https://github.com/JuliaGPU/KernelAbstractions.jl) and
 differentiated with [Enzyme.jl](https://github.com/EnzymeAD/Enzyme.jl), so the same model
 code runs unchanged on CPU or GPU (CUDA or Metal) — which device is used is purely a property of
-[`DFTOptions`](@ref cDFT.DFTOptions).
+[`DFTOptions`](@ref ClassicalDFT.DFTOptions).
 
 !!! note
     Spherical/cylindrical (`Uniform1DSphr`/`Uniform1DCyl`) structures are CPU-only (see the
@@ -16,7 +16,7 @@ code runs unchanged on CPU or GPU (CUDA or Metal) — which device is used is pu
 Load `CUDA` / `Metal`  *before* building your `DFTOptions`, then pass a `CUDABackend()` / `MetalBackend()`:
 
 ```julia
-julia> using Clapeyron, cDFT, CUDA
+julia> using Clapeyron, ClassicalDFT, CUDA
 
 julia> options = DFTOptions(CUDABackend())
 
@@ -62,4 +62,4 @@ cost of solver precision — worth trying if you're memory-bandwidth-bound on ve
 grids, but check convergence tolerances still make sense at reduced precision.
 
 !!! tip
-    Metal GPUs are only compatible with Float32 precision. Once `Metal` is loaded, `cDFT` will automatically update the precision.
+    Metal GPUs are only compatible with Float32 precision. Once `Metal` is loaded, `ClassicalDFT` will automatically update the precision.

@@ -1,19 +1,19 @@
 # Copolymer Microphase Morphologies
 
 [Group-Contribution & Heterosegmented Chains](@ref) introduced
-[`custom_structure`](@ref cDFT.custom_structure) for describing a synthetic block
+[`custom_structure`](@ref ClassicalDFT.custom_structure) for describing a synthetic block
 copolymer's bead sequence (e.g. `custom_structure("AAAABBBB")` for a symmetric diblock).
 This tutorial uses that same mechanism together with four new structures —
-[`LamellarStack3DCart`](@ref cDFT.LamellarStack3DCart),
-[`HexLattice3DCart`](@ref cDFT.HexLattice3DCart), [`BCC3DCart`](@ref cDFT.BCC3DCart) and
-[`Gyroid3DCart`](@ref cDFT.Gyroid3DCart) — to seed and converge the classic
+[`LamellarStack3DCart`](@ref ClassicalDFT.LamellarStack3DCart),
+[`HexLattice3DCart`](@ref ClassicalDFT.HexLattice3DCart), [`BCC3DCart`](@ref ClassicalDFT.BCC3DCart) and
+[`Gyroid3DCart`](@ref ClassicalDFT.Gyroid3DCart) — to seed and converge the classic
 microphase-separated morphologies a diblock melt can adopt.
 
 ## Recap: `custom_structure` and group names
 
 `custom_structure(s)` turns a string like `"AAAABBBB"` into a bead-by-bead connectivity:
 each character is one bead, bonded to the previous one in sequence, so `"AAAABBBB"`
-describes a linear diblock with 4 `A`-beads followed by 4 `B`-beads. Internally, cDFT
+describes a linear diblock with 4 `A`-beads followed by 4 `B`-beads. Internally, ClassicalDFT
 labels each expanded bead `"A_1"`, `"A_2"`, …, `"B_1"`, … — one entry per bead, with the
 letter prefix identifying which named group it belongs to.
 
@@ -36,7 +36,7 @@ existing `examples/copolymer_params_like.csv`/`copolymer_params_unlike.csv`, wri
 exactly this A/B pair):
 
 ```julia
-julia> using Clapeyron, cDFT
+julia> using Clapeyron, ClassicalDFT
 
 julia> model = HeterogcPCPSAFT([("mol", ["A"=>4, "B"=>4], [("A","A")=>3,("B","B")=>3,("A","B")=>1])];
                                 userlocations=["copolymer_params_like.csv","copolymer_params_unlike.csv"])
@@ -47,12 +47,12 @@ julia> v = volume(model, p, T, [1.0])
 
 julia> ρb = [1.0]./v
 
-julia> L = cDFT.length_scale(model)
+julia> L = ClassicalDFT.length_scale(model)
 ```
 
 The bonding topology used for the DFT calculation itself (as opposed to the bulk
 thermodynamic model above) is supplied separately, via `mol_structure` — a keyword of
-[`DFTSystem`](@ref cDFT.DFTSystem) (see [Group-Contribution & Heterosegmented Chains](@ref)):
+[`DFTSystem`](@ref ClassicalDFT.DFTSystem) (see [Group-Contribution & Heterosegmented Chains](@ref)):
 
 ```julia
 julia> mol_structure = Dict("mol" => custom_structure("AAAABBBB"))
@@ -69,7 +69,7 @@ scalar phase.
 !!! tip
     Converging a full 3D periodic multi-domain morphology is a much bigger calculation
     than the 1D examples in earlier tutorials, and the Anderson-mixing solver in
-    [`converge!`](@ref cDFT.converge!) can be slower to settle for sharp, high-contrast
+    [`converge!`](@ref ClassicalDFT.converge!) can be slower to settle for sharp, high-contrast
     seeds — the same general characteristic already noted for sharp Steele-wall profiles
     in [Choosing a Geometry & Adsorption](@ref). Expect these to take noticeably longer to
     run than earlier tutorials, and reach for [GPU Acceleration](@ref) if it becomes a
@@ -80,7 +80,7 @@ scalar phase.
 ```julia
 julia> ngrid = 31
 
-julia> structure = cDFT.LamellarStack3DCart((p, T), ρb, [-10L 10L; -10L 10L; -10L 10L], (ngrid, ngrid, ngrid); core_groups=["A"])
+julia> structure = ClassicalDFT.LamellarStack3DCart((p, T), ρb, [-10L 10L; -10L 10L; -10L 10L], (ngrid, ngrid, ngrid); core_groups=["A"])
 
 julia> system = DFTSystem(model, structure; mol_structure=mol_structure)
 
@@ -102,7 +102,7 @@ julia> Lx = 10L
 
 julia> bounds = [-Lx Lx; -sqrt(3)*Lx sqrt(3)*Lx; -Lx Lx]
 
-julia> structure = cDFT.HexLattice3DCart((p, T), ρb, bounds, (ngrid, round(Int, ngrid*sqrt(3)), ngrid); core_groups=["A"])
+julia> structure = ClassicalDFT.HexLattice3DCart((p, T), ρb, bounds, (ngrid, round(Int, ngrid*sqrt(3)), ngrid); core_groups=["A"])
 
 julia> system = DFTSystem(model, structure; mol_structure=mol_structure)
 
@@ -118,7 +118,7 @@ julia> converge!(system, ρ)
 `BCC3DCart` expects a cubic unit cell:
 
 ```julia
-julia> structure = cDFT.BCC3DCart((p, T), ρb, [-10L 10L; -10L 10L; -10L 10L], (ngrid, ngrid, ngrid); core_groups=["A"])
+julia> structure = ClassicalDFT.BCC3DCart((p, T), ρb, [-10L 10L; -10L 10L; -10L 10L], (ngrid, ngrid, ngrid); core_groups=["A"])
 
 julia> system = DFTSystem(model, structure; mol_structure=mol_structure)
 
@@ -134,7 +134,7 @@ julia> converge!(system, ρ)
 Also a cubic unit cell, seeded from the standard Schoen gyroid level-set:
 
 ```julia
-julia> structure = cDFT.Gyroid3DCart((p, T), ρb, [-10L 10L; -10L 10L; -10L 10L], (ngrid, ngrid, ngrid); core_groups=["A"])
+julia> structure = ClassicalDFT.Gyroid3DCart((p, T), ρb, [-10L 10L; -10L 10L; -10L 10L], (ngrid, ngrid, ngrid); core_groups=["A"])
 
 julia> system = DFTSystem(model, structure; mol_structure=mol_structure)
 

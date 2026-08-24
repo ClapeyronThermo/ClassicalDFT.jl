@@ -64,7 +64,7 @@ function TangentHSPropagator(model::EoSModel,species::DFTSpecies,structure::Unio
     return TangentHSPropagator(Ω)
 end
 
-function preallocate_propagator(system::AbstractcDFTSystem,propagator::TangentHSPropagator,ρ,backend::Backend)
+function preallocate_propagator(system::AbstractClassicalDFTSystem,propagator::TangentHSPropagator,ρ,backend::Backend)
     nd = dimension(system)
     ngrid = system.structure.ngrid
     FP = eltype(ρ)
@@ -80,7 +80,7 @@ function preallocate_propagator(system::AbstractcDFTSystem,propagator::TangentHS
 end
 
 
-function propagate!(system::AbstractcDFTSystem, propagate::TangentHSPropagator, ρ, δfδρ_res, Gcα, Gp, buf, P, iP, scratch)
+function propagate!(system::AbstractClassicalDFTSystem, propagate::TangentHSPropagator, ρ, δfδρ_res, Gcα, Gp, buf, P, iP, scratch)
     nd = dimension(system)
     model = system.model
     structure = system.structure
