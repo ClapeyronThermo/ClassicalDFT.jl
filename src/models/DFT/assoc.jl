@@ -30,8 +30,12 @@ function pack_assoc_params(model, HSd, sigma=model.params.sigma.values)
     kap_vals = model.params.bondvol.values
 
     for idx in 1:length(eps_vals.values)
-        i, j = eps_vals.outer_indices[idx]
-        a, b = eps_vals.inner_indices[idx]
+        if hasfield(Clapeyron.Compressed4DMatrix,:indices)
+            i, j, a, b = Clapeyron.idx_to_ijab(eps_vals.indices[idx])
+        else
+            i, j = eps_vals.outer_indices[idx]
+            a, b = eps_vals.inner_indices[idx]
+        end
         push!(assoc_icomp, i); push!(assoc_jcomp, j)
         push!(assoc_isite, a); push!(assoc_jsite, b)
         push!(assoc_eps, eps_vals.values[idx])
