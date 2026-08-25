@@ -1,13 +1,13 @@
 ```@meta
-CurrentModule = cDFT
+CurrentModule = ClassicalDFT
 ```
 
 # SAFT-based Models
 
-cDFT's most complete family of free-energy functionals, built as a Rosenfeld FMT
+ClassicalDFT's most complete family of free-energy functionals, built as a Rosenfeld FMT
 hard-sphere reference plus model-specific dispersion, association, chain and polar terms.
 The bulk equation of state for each of these is obtained directly from
-[Clapeyron.jl](https://github.com/ClapeyronThermo/Clapeyron.jl) — cDFT only supplies the
+[Clapeyron.jl](https://github.com/ClapeyronThermo/Clapeyron.jl) — ClassicalDFT only supplies the
 inhomogeneous (weighted-density) functional built on top of it.
 
 ## Contents
@@ -26,17 +26,17 @@ group-contribution chains (see [Group-Contribution & Heterosegmented Chains](@re
 solutes.
 
 ```@docs
-cDFT.PCSAFT
-cDFT.PCPSAFT
-cDFT.HomogcPCPSAFT
-cDFT.HeterogcPCPSAFT
-cDFT.QPCPSAFT
-cDFT.pharmaPCSAFT
+ClassicalDFT.PCSAFT
+ClassicalDFT.PCPSAFT
+ClassicalDFT.HomogcPCPSAFT
+ClassicalDFT.HeterogcPCPSAFT
+ClassicalDFT.QPCPSAFT
+ClassicalDFT.pharmaPCSAFT
 ```
 
 ## Mie-Potential SAFT Models
 
 ```@docs
-cDFT.SAFTVRMie
-cDFT.SAFTgammaMie
+ClassicalDFT.SAFTVRMie
+ClassicalDFT.SAFTgammaMie
 ```

@@ -1,6 +1,6 @@
 # Figures for docs/src/tutorials/dynamic_dft.md
 include("common.jl")
-using Clapeyron, cDFT, OrdinaryDiffEqStabilizedRK, CairoMakie
+using Clapeyron, ClassicalDFT, OrdinaryDiffEqStabilizedRK, CairoMakie
 
 model = PCSAFT(["water", "hexane"])
 p, T = 1e5, 290.15
@@ -10,12 +10,12 @@ x, n, _ = tp_flash(model, p, T, [0.5, 0.5], MichelsenTPFlash(equilibrium=:lle, K
 ρ2 = x[2,:] ./ Clapeyron.volume(model, p, T, x[2,:])
 ρb = (ρ1 .+ ρ2) ./ 2
 
-L = cDFT.length_scale(model)
+L = ClassicalDFT.length_scale(model)
 ngrid = 51
-structure = cDFT.Uniform2DCart((p, T), ρb, [-10L 10L; -10L 10L], (ngrid, ngrid))
+structure = ClassicalDFT.Uniform2DCart((p, T), ρb, [-10L 10L; -10L 10L], (ngrid, ngrid))
 system = DFTSystem(model, structure)
 
-ρ0 = cDFT.initialize_profiles(system; noise=0.01)
+ρ0 = ClassicalDFT.initialize_profiles(system; noise=0.01)
 println("initialized profiles with noise=0.01")
 
 prob = ODEProblem(system, ρ0, (0.0, 1e1))
@@ -27,11 +27,11 @@ fig = plot(system, exp.(sol(t0 + 0.05*(tend - t0))))
 ylims = (0.9*minimum([ρ1; ρ2]), 1.1*maximum([ρ1; ρ2]))
 fig
 save(assetpath("dynamic_dft_early.png"), fig)
-fig = plot(system, exp.(sol(t0 + 0.3*(tend - t0))))
-fig[Axis].ylimits = ylims
+fig, ax, _ = plot(system, exp.(sol(t0 + 0.3*(tend - t0))))
+Makie.ylims!(ax, ylims)
 save(assetpath("dynamic_dft_mid.png"), fig)
-fig = plot(system, exp.(sol(tend)))
-fig[Axis].ylimits = ylims
+fig, ax, _ = plot(system, exp.(sol(tend)))
+Makie.ylims!(ax, ylims)
 save(assetpath("dynamic_dft_late.png"), fig)
 
 println("saved dynamic_dft_{early,mid,late}.png to ", ASSETS)

@@ -4,11 +4,11 @@
 layout: home
 
 hero:
-  name: cDFT.jl
+  name: ClassicalDFT.jl
   text: Classical Density Functional Theory in Julia
   image:
     src: logo.png
-    alt: cDFT.jl
+    alt: ClassicalDFT.jl
   tagline: A comprehensive, extensible library of classical DFT and Self-Consistent Field Theory models, built directly on top of Clapeyron.jl
   actions:
     - theme: brand
@@ -19,7 +19,7 @@ hero:
       link: /installation
     - theme: alt
       text: View on GitHub
-      link: https://github.com/ClapeyronThermo/cDFT.jl
+      link: https://github.com/ClapeyronThermo/ClassicalDFT.jl
 
 features:
   - icon: ⚛️
@@ -45,18 +45,18 @@ features:
 ````
 
 ```@meta
-CurrentModule = cDFT
+CurrentModule = ClassicalDFT
 ```
 
 ## What is this?
 
-cDFT intends to provide a comprehensive library of classical Density Functional Theory
-(cDFT) and Self-Consistent Field Theory models, as well as a simple framework to develop
-your own! cDFT is built directly on top of [Clapeyron.jl](https://github.com/ClapeyronThermo/Clapeyron.jl)
+ClassicalDFT intends to provide a comprehensive library of classical Density Functional Theory
+(ClassicalDFT) and Self-Consistent Field Theory models, as well as a simple framework to develop
+your own! ClassicalDFT is built directly on top of [Clapeyron.jl](https://github.com/ClapeyronThermo/Clapeyron.jl)
 and reuses its equations of state as the bulk free-energy model underlying every
 inhomogeneous calculation — the two packages are meant to be used together.
 
-With cDFT you can compute density profiles, surface/interfacial tensions and adsorption
+With ClassicalDFT you can compute density profiles, surface/interfacial tensions and adsorption
 isotherms for fluids next to walls, in pores, around solutes, at vapour-liquid and
 liquid-liquid interfaces, in microphase-separated copolymer melts, and for electrolytes
 near surfaces — in 1D, 2D or 3D, on the CPU or GPU, and (via Dynamic DFT) as a
@@ -68,7 +68,7 @@ function of time as well as space.
 
 ```julia
 using Pkg
-Pkg.add(["cDFT", "Clapeyron"])
+Pkg.add(["ClassicalDFT", "Clapeyron"])
 ```
 
 See [Installation](@ref) for optional extensions (plotting, GPU, group-contribution
@@ -77,13 +77,13 @@ connectivity, Dynamic DFT).
 ### A first calculation
 
 ```julia
-using Clapeyron, cDFT
+using Clapeyron, ClassicalDFT
 
 model = PCSAFT(["methane"])
 T, p = 150.0, 1e7
 v = Clapeyron.volume(model, p, T, [1.0]; phase=:liquid)
 ρbulk = [1/v]
-L = cDFT.length_scale(model)
+L = ClassicalDFT.length_scale(model)
 
 width = 5L
 surface = Steele(["graphite"], width)
@@ -97,14 +97,14 @@ converge!(system, ρ)
 `ρ` is now the converged density profile of liquid methane next to a graphite wall. See
 [Getting Started](@ref) for the full walkthrough, including plotting the result.
 
-## Citing cDFT.jl
+## Citing ClassicalDFT.jl
 
-cDFT.jl does not yet have a dedicated publication — for now, please cite the
-[GitHub repository](https://github.com/ClapeyronThermo/cDFT.jl) directly. Since every cDFT
+ClassicalDFT.jl does not yet have a dedicated publication — for now, please cite the
+[GitHub repository](https://github.com/ClapeyronThermo/ClassicalDFT.jl) directly. Since every ClassicalDFT
 calculation is built on top of a Clapeyron.jl bulk equation of state, please also cite
 [Clapeyron.jl](https://pubs.acs.org/doi/10.1021/acs.iecr.2c00326) itself, along with the
 specific equation of state used (obtainable via `Clapeyron.cite(model)`) and, where
-relevant, the original cDFT functional reference (e.g. Sauer & Gross, 2017 for the
+relevant, the original ClassicalDFT functional reference (e.g. Sauer & Gross, 2017 for the
 weighted-density PC-SAFT functional; see each entry under [Available Models](@ref "SAFT-based Models")
 for its reference).
 
@@ -117,21 +117,21 @@ for its reference).
       <img class="related-pkg-logo" src="/assets/related_clapeyron_logo.svg" alt="Clapeyron.jl" />
     </div>
     <h3 class="related-pkg-title">Clapeyron.jl</h3>
-    <p class="related-pkg-details">Provides every bulk equation of state cDFT builds its inhomogeneous functionals on top of, and is required alongside cDFT for essentially all use.</p>
+    <p class="related-pkg-details">Provides every bulk equation of state ClassicalDFT builds its inhomogeneous functionals on top of, and is required alongside ClassicalDFT for essentially all use.</p>
   </a>
   <a class="related-pkg-card" href="https://clapeyronthermo.github.io/GCIdentifier.jl/" target="_blank" rel="noreferrer">
     <div class="related-pkg-logo-wrap">
       <img class="related-pkg-logo" src="/assets/related_gcidentifier_logo.png" alt="GCIdentifier.jl" />
     </div>
     <h3 class="related-pkg-title">GCIdentifier.jl</h3>
-    <p class="related-pkg-details">Group contribution identification from SMILES, used for building heterosegmented and group-contribution cDFT models.</p>
+    <p class="related-pkg-details">Group contribution identification from SMILES, used for building heterosegmented and group-contribution ClassicalDFT models.</p>
   </a>
   <a class="related-pkg-card" href="https://clapeyronthermo.github.io/Langmuir.jl/" target="_blank" rel="noreferrer">
     <div class="related-pkg-logo-wrap">
       <img class="related-pkg-logo" src="/assets/related_langmuir_logo.png" alt="Langmuir.jl" />
     </div>
     <h3 class="related-pkg-title">Langmuir.jl</h3>
-    <p class="related-pkg-details">Single- and multi-component adsorption equilibrium models, complementary to cDFT's own adsorption isotherm calculations.</p>
+    <p class="related-pkg-details">Single- and multi-component adsorption equilibrium models, complementary to ClassicalDFT's own adsorption isotherm calculations.</p>
   </a>
 </div>
 
@@ -205,4 +205,4 @@ for its reference).
 
 ## License
 
-cDFT.jl is licensed under the [MIT license](https://github.com/ClapeyronThermo/cDFT.jl/blob/main/LICENSE.md).
+ClassicalDFT.jl is licensed under the [MIT license](https://github.com/ClapeyronThermo/ClassicalDFT.jl/blob/main/LICENSE.md).

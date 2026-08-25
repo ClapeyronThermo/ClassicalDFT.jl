@@ -94,7 +94,7 @@ end
 
 # Dispatches to the GCIdentifier/ChemicalIdentifiers extension (if loaded) to resolve GC
 # connectivity directly from a chemical name. This is *not* implemented as a competing
-# `cDFT.get_connectivity(::EoSModel, ::String)` method inside the extension itself: Julia
+# `ClassicalDFT.get_connectivity(::EoSModel, ::String)` method inside the extension itself: Julia
 # disallows two modules defining an identical method signature during extension
 # precompilation, so the extension instead defines a plainly-named `get_connectivity_from_name`
 # that this fallback looks up and calls via `Base.get_extension` at runtime.

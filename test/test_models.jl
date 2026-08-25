@@ -1,5 +1,5 @@
-using Test, cDFT
-using cDFT.Clapeyron
+using Test, ClassicalDFT
+using ClassicalDFT.Clapeyron
 
 @testset "Models" begin
     p = 1e5
@@ -15,12 +15,12 @@ using cDFT.Clapeyron
         vl = volume(model, p, T, x)
         ρ = x/vl
         
-        L = cDFT.length_scale(model)
+        L = ClassicalDFT.length_scale(model)
         
         structure = Uniform1DCart((p, T), ρ,[-10L,10L], (3,))
         system = DFTSystem(model, structure)
-        ρ = cDFT.initialize_profiles(system)
-        μ2 = cDFT.δFδρ_res(system, ρ)
+        ρ = ClassicalDFT.initialize_profiles(system)
+        μ2 = ClassicalDFT.δFδρ_res(system, ρ)
 
         @test μ1[1] ≈ μ2[1] rtol = 1e-6
 
@@ -33,11 +33,11 @@ using cDFT.Clapeyron
         vl = volume(model, p, T, x3)
         ρ = x3/vl
         
-        L = cDFT.length_scale(model)
+        L = ClassicalDFT.length_scale(model)
         structure = Uniform1DCart((p, T), ρ,[-10L,10L], (3,))
         system = DFTSystem(model, structure)
-        ρ = cDFT.initialize_profiles(system)
-        μ2 = cDFT.δFδρ_res(system, ρ)
+        ρ = ClassicalDFT.initialize_profiles(system)
+        μ2 = ClassicalDFT.δFδρ_res(system, ρ)
 
         @test μ1[1] ≈ μ2[1] rtol = 1e-6
     end
@@ -51,11 +51,11 @@ using cDFT.Clapeyron
         vl = volume(model, p, T, x)
         ρ = x/vl
         
-        L = cDFT.length_scale(model)
+        L = ClassicalDFT.length_scale(model)
         structure = Uniform1DCart((p, T), ρ,[-10L,10L], (3,))
         system = DFTSystem(model, structure)
-        ρ = cDFT.initialize_profiles(system)
-        μ2 = cDFT.δFδρ_res(system, ρ)
+        ρ = ClassicalDFT.initialize_profiles(system)
+        μ2 = ClassicalDFT.δFδρ_res(system, ρ)
 
         @test μ1[1] ≈ μ2[1] rtol = 1e-6
     end
@@ -67,11 +67,11 @@ using cDFT.Clapeyron
         vl = volume(model, p, T, x)
         ρ = x/vl
         
-        L = cDFT.length_scale(model)
+        L = ClassicalDFT.length_scale(model)
         structure = Uniform1DCart((p, T),ρ,[-10L,10L], (3,))
         system = DFTSystem(model, structure)
-        ρ = cDFT.initialize_profiles(system)
-        μ2 = cDFT.δFδρ_res(system, ρ)
+        ρ = ClassicalDFT.initialize_profiles(system)
+        μ2 = ClassicalDFT.δFδρ_res(system, ρ)
 
         @test μ1[1] ≈ μ2[1] rtol = 1e-6
     end
@@ -85,11 +85,11 @@ using cDFT.Clapeyron
         vl = volume(model, p, T, x)
         ρ = x/vl
 
-        L = cDFT.length_scale(model)
+        L = ClassicalDFT.length_scale(model)
         structure = Uniform1DCart((p, T), ρ,[-10L,10L], (3,))
         system = DFTSystem(model, structure)
-        ρ = cDFT.initialize_profiles(system)
-        μ2 = cDFT.δFδρ_res(system, ρ)
+        ρ = ClassicalDFT.initialize_profiles(system)
+        μ2 = ClassicalDFT.δFδρ_res(system, ρ)
 
         @test μ1[1] ≈ μ2[1] rtol = 1e-6
     end
@@ -101,11 +101,11 @@ using cDFT.Clapeyron
         μ1_hb = Clapeyron.chemical_potential_res(model_hb, p, T, x)/T/Clapeyron.Rgas()
         vl_hb = volume(model_hb, p, T, x)
         ρ_hb  = x/vl_hb
-        L_hb  = cDFT.length_scale(model_hb)
+        L_hb  = ClassicalDFT.length_scale(model_hb)
         structure_hb = Uniform1DCart((p, T), ρ_hb, [-10L_hb, 10L_hb], (3,))
         system_hb    = DFTSystem(model_hb, structure_hb)
-        ρ0_hb = cDFT.initialize_profiles(system_hb)
-        μ2_hb = cDFT.δFδρ_res(system_hb, ρ0_hb)
+        ρ0_hb = ClassicalDFT.initialize_profiles(system_hb)
+        μ2_hb = ClassicalDFT.δFδρ_res(system_hb, ρ0_hb)
         @test μ1_hb[1] ≈ μ2_hb[1] rtol = 1e-6
     end
 
@@ -124,11 +124,11 @@ using cDFT.Clapeyron
         vl = volume(model, p, T, x1)
         ρ = x1/vl
 
-        L = cDFT.length_scale(model)
+        L = ClassicalDFT.length_scale(model)
         structure = Uniform1DCart((p, T),ρ,[-10L,10L], (3,))
         system = DFTSystem(model, structure)
-        ρ = cDFT.initialize_profiles(system)
-        μ2 = cDFT.δFδρ_res(system, ρ)
+        ρ = ClassicalDFT.initialize_profiles(system)
+        μ2 = ClassicalDFT.δFδρ_res(system, ρ)
 
         @test μ1[1] ≈ μ2[1] rtol = 1e-6
     end
@@ -141,11 +141,11 @@ using cDFT.Clapeyron
         vl = volume(model, p, T, x)
         ρ = x/vl
 
-        L = cDFT.length_scale(model)
+        L = ClassicalDFT.length_scale(model)
         structure = Uniform1DCart((p, T), ρ, [-10L, 10L], (3,))
         system = DFTSystem(model, structure)
-        ρ = cDFT.initialize_profiles(system)
-        μ2 = cDFT.δFδρ_res(system, ρ)
+        ρ = ClassicalDFT.initialize_profiles(system)
+        μ2 = ClassicalDFT.δFδρ_res(system, ρ)
 
         @test μ1[1] ≈ μ2[1] rtol = 1e-6
     end
@@ -159,11 +159,11 @@ using cDFT.Clapeyron
         vl = volume(model, p, T, x1)
         ρ = x1/vl
 
-        L = cDFT.length_scale(model)
+        L = ClassicalDFT.length_scale(model)
         structure = Uniform1DCart((p, T), ρ, [-10L, 10L], (3,))
         system = DFTSystem(model, structure)
-        ρ = cDFT.initialize_profiles(system)
-        μ2 = cDFT.δFδρ_res(system, ρ)
+        ρ = ClassicalDFT.initialize_profiles(system)
+        μ2 = ClassicalDFT.δFδρ_res(system, ρ)
 
         @test μ1[1] ≈ μ2[1] rtol = 1e-4
     end
@@ -177,11 +177,11 @@ using cDFT.Clapeyron
         vl = volume(model, p, T, x)
         ρ = x/vl
 
-        L = cDFT.length_scale(model)
+        L = ClassicalDFT.length_scale(model)
         structure = Uniform1DCart((p, T), ρ, [-10L, 10L], (3,))
         system = DFTSystem(model, structure)
-        ρ = cDFT.initialize_profiles(system)
-        μ2 = cDFT.δFδρ_res(system, ρ)
+        ρ = ClassicalDFT.initialize_profiles(system)
+        μ2 = ClassicalDFT.δFδρ_res(system, ρ)
 
         @test μ1[1] ≈ μ2[1,1] rtol = 1e-4
         @test μ1[2] ≈ μ2[1,2] rtol = 1e-4
@@ -196,11 +196,11 @@ using cDFT.Clapeyron
         vl = volume(model, p, T, x1)
         ρ = x1/vl
 
-        L = cDFT.length_scale(model)
+        L = ClassicalDFT.length_scale(model)
         structure = Uniform1DCart((p, T), ρ, [-10L, 10L], (3,))
         system = DFTSystem(model, structure)
-        ρ = cDFT.initialize_profiles(system)
-        μ2 = cDFT.δFδρ_res(system, ρ)
+        ρ = ClassicalDFT.initialize_profiles(system)
+        μ2 = ClassicalDFT.δFδρ_res(system, ρ)
 
         @test μ1[1] ≈ μ2[1] rtol = 1e-4
     end
@@ -214,11 +214,11 @@ using cDFT.Clapeyron
         vl = volume(model, p, T, x1)
         ρ = x1/vl
 
-        L = cDFT.length_scale(model)
+        L = ClassicalDFT.length_scale(model)
         structure = Uniform1DCart((p, T), ρ, [-10L, 10L], (3,))
         system = DFTSystem(model, structure)
-        ρ = cDFT.initialize_profiles(system)
-        μ2 = cDFT.δFδρ_res(system, ρ)
+        ρ = ClassicalDFT.initialize_profiles(system)
+        μ2 = ClassicalDFT.δFδρ_res(system, ρ)
 
         @test μ1[1] ≈ μ2[1] rtol = 1e-4
     end
@@ -232,11 +232,11 @@ using cDFT.Clapeyron
         vl = volume(model, p, T, x1)
         ρ = x1/vl
 
-        L = cDFT.length_scale(model)
+        L = ClassicalDFT.length_scale(model)
         structure = Uniform1DCart((p, T), ρ, [-10L, 10L], (3,))
         system = DFTSystem(model, structure)
-        ρ = cDFT.initialize_profiles(system)
-        μ2 = cDFT.δFδρ_res(system, ρ)
+        ρ = ClassicalDFT.initialize_profiles(system)
+        μ2 = ClassicalDFT.δFδρ_res(system, ρ)
 
         @test μ1[1] ≈ μ2[1] rtol = 1e-4
     end
@@ -251,11 +251,11 @@ using cDFT.Clapeyron
         vl = volume(model, p, T, x1)
         ρ = x1/vl
 
-        L = cDFT.length_scale(model)
+        L = ClassicalDFT.length_scale(model)
         structure = Uniform1DCart((p, T), ρ, [-10L, 10L], (3,))
         system = DFTSystem(model, structure)
-        ρ = cDFT.initialize_profiles(system)
-        μ2 = cDFT.δFδρ_res(system, ρ)
+        ρ = ClassicalDFT.initialize_profiles(system)
+        μ2 = ClassicalDFT.δFδρ_res(system, ρ)
 
         @test μ1[1] ≈ μ2[1] rtol = 1e-4
     end
@@ -269,11 +269,11 @@ using cDFT.Clapeyron
         vl = volume(model, p, T, x1)
         ρ = x1/vl
 
-        L = cDFT.length_scale(model)
+        L = ClassicalDFT.length_scale(model)
         structure = Uniform1DCart((p, T), ρ, [-10L, 10L], (3,))
         system = DFTSystem(model, structure)
-        ρ = cDFT.initialize_profiles(system)
-        μ2 = cDFT.δFδρ_res(system, ρ)
+        ρ = ClassicalDFT.initialize_profiles(system)
+        μ2 = ClassicalDFT.δFδρ_res(system, ρ)
 
         @test μ1[1] ≈ μ2[1] rtol = 1e-4
     end
@@ -291,11 +291,11 @@ using cDFT.Clapeyron
 
         μ1 = Clapeyron.chemical_potential_res(model, p, T, z)/T/Clapeyron.Rgas()
 
-        L = cDFT.length_scale(model)
+        L = ClassicalDFT.length_scale(model)
         structure = Uniform1DCart((p, T), ρbulk, [-10L, 10L], (3,))
         system = ElectrolyteDFTSystem(model, structure)
-        ρ = cDFT.initialize_profiles(system)
-        μ2 = cDFT.δFδρ_res(system, ρ)
+        ρ = ClassicalDFT.initialize_profiles(system)
+        μ2 = ClassicalDFT.δFδρ_res(system, ρ)
 
         @test μ1[1] ≈ μ2[1, 1] rtol = 1e-4   # water08
         @test μ1[2] ≈ μ2[1, 2] rtol = 1e-4   # Na+

@@ -46,7 +46,7 @@ julia> adsorption(model, surface, 1e5, 298.15)
 ```
 """
 function adsorption(model::EoSModel, surface::ExternalFieldModel, p, T, n=[1.0])
-    L = cDFT.length_scale(model)
+    L = ClassicalDFT.length_scale(model)
 
     width = surface.params.width[1]
     bounds = [0.7L,width-0.7L]
@@ -54,9 +54,9 @@ function adsorption(model::EoSModel, surface::ExternalFieldModel, p, T, n=[1.0])
     v = volume(model,p,T,n)
     ρ = n./v
 
-    structure = cDFT.Uniform1DCart((p, T), ρ, bounds, (201,))
+    structure = ClassicalDFT.Uniform1DCart((p, T), ρ, bounds, (201,))
 
-    system = cDFT.DFTSystem(model, structure, surface)
+    system = ClassicalDFT.DFTSystem(model, structure, surface)
 
     ρ = initialize_profiles(system)
 

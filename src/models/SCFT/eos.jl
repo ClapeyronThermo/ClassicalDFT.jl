@@ -27,7 +27,7 @@ Chain order and ensemble/count bookkeeping for a particular SCFT calculation liv
 `grouplist` is Clapeyron's own group-contribution format (`Vector{Tuple{String,Vector{Pair{String,Int}}}}`), e.g. `[("diblock", ["A"=>4,"B"=>4]), ("solvent", ["S"=>1])]` — `components` are molecule types (chains and solvents, unified: a solvent is just an `N=1` molecule type), `b`/`chi` are indexed by species (`groups.flattenedgroups`, the union of group names across `grouplist`).
 
 `a_res` is defined so that, for `z` indexed by `components` (molecule-type mole amounts, matching Clapeyron's convention), `VT_chemical_potential_res(model, V, T, z)_i / (R̄*T)` equals `Σ_α n_flattenedgroups[i][α] · w_α(ρ)`, i.e. molecule type `i`'s residual chemical potential is the sum of its constituent segments' potentials — where `w_α` is exactly `src/models/SCFT/scft.jl`'s `compute_fields!`/`compute_bulk_fields` mean field. 
-It deliberately omits any chain translational/mixing entropy contribution, since that entropy is already counted once by cDFT's SCFT free energy via the single-chain partition function `Q` (`src/models/SCFT/scft.jl`'s `compute_partition_functions`/`free_energy`). 
+It deliberately omits any chain translational/mixing entropy contribution, since that entropy is already counted once by ClassicalDFT's SCFT free energy via the single-chain partition function `Q` (`src/models/SCFT/scft.jl`'s `compute_partition_functions`/`free_energy`). 
 Do not add an entropy term here without also removing the corresponding double-count from wherever `Q` is used.
 """
 struct SCFTLatticeFluid{I<:IdealModel} <: SCFTLatticeFluidModel
@@ -313,7 +313,7 @@ function a_res(model::SCFTLatticeFluid, V, T, z)
     return V*f/Σz
 end
 
-# Placeholders: cDFT always calls a_res/VT_chemical_potential_res at an explicitly
+# Placeholders: ClassicalDFT always calls a_res/VT_chemical_potential_res at an explicitly
 # prescribed density, never through Clapeyron's own volume/phase solvers, so these
 # only matter if this model is ever used standalone for solver bootstrapping.
 lb_volume(model::SCFTLatticeFluid, T, z) =

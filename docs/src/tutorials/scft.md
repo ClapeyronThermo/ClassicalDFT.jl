@@ -14,7 +14,7 @@ classical-DFT route to the same physics.
 species, and a `χ` (Flory-Huggins interaction) matrix:
 
 ```julia
-julia> using cDFT
+julia> using ClassicalDFT
 
 julia> N_seg = 20
 
@@ -34,7 +34,7 @@ Model](@ref)).
 
 As with the group-contribution DFT models, the chain's bonding topology is supplied
 separately via `mol_structure`, using the same [`custom_structure`](@ref
-cDFT.custom_structure) mechanism as [Group-Contribution & Heterosegmented Chains](@ref):
+ClassicalDFT.custom_structure) mechanism as [Group-Contribution & Heterosegmented Chains](@ref):
 
 ```julia
 julia> mol_structure = Dict("diblock" => custom_structure("A"^(N_seg÷2) * "B"^(N_seg÷2)))
@@ -42,7 +42,7 @@ julia> mol_structure = Dict("diblock" => custom_structure("A"^(N_seg÷2) * "B"^(
 
 ## Seeding a lamellar unit cell
 
-[`LamellarStack1DCart`](@ref cDFT.LamellarStack1DCart) (see [Block-Copolymer Microphase
+[`LamellarStack1DCart`](@ref ClassicalDFT.LamellarStack1DCart) (see [Block-Copolymer Microphase
 Morphologies](@ref)) seeds a periodic layered profile directly — a much more reliable
 starting point for a symmetric diblock than random noise, which can decay back to a
 uniform melt before the Anderson solver has a chance to grow the instability. `core_groups`
@@ -58,7 +58,7 @@ julia> structure = LamellarStack1DCart((0.0, 0.0), [1.0], [0.0, L], ngrid; core_
 ```
 
 `SCFTSystem` composes the model, structure and chain architecture, mirroring
-[`DFTSystem`](@ref cDFT.DFTSystem). Because this is a melt of a single molecule type
+[`DFTSystem`](@ref ClassicalDFT.DFTSystem). Because this is a melt of a single molecule type
 filling the box, use the canonical ensemble with the chain count implied by the box
 length and chain length:
 

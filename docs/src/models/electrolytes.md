@@ -1,19 +1,19 @@
 ```@meta
-CurrentModule = cDFT
+CurrentModule = ClassicalDFT
 ```
 
 # Electrolytes
 
-As with previous DFT models, cDFT does not define its own bulk electrolyte
+As with previous DFT models, ClassicalDFT does not define its own bulk electrolyte
 equations of state — those come directly from Clapeyron (e.g. `ePCSAFT`, built from a
 neutral model, an ion model and a set of charges via Clapeyron's `ElectrolyteModel`).
-cDFT's contribution is the machinery that turns a Clapeyron `ElectrolyteModel` into an
+ClassicalDFT's contribution is the machinery that turns a Clapeyron `ElectrolyteModel` into an
 inhomogeneous DFT calculation, which is split across two other reference pages:
 
-- [`ElectrolyteDFTSystem`](@ref cDFT.ElectrolyteDFTSystem) (see [System](../api/system.md)) —
+- [`ElectrolyteDFTSystem`](@ref ClassicalDFT.ElectrolyteDFTSystem) (see [System](../api/system.md)) —
   composes the neutral-model functional with the ion-model functional below, and
   automatically attaches the mean-field electrostatic external field.
-- [`ElectrostaticPotential`](@ref cDFT.ElectrostaticPotential) (see
+- [`ElectrostaticPotential`](@ref ClassicalDFT.ElectrostaticPotential) (see
   [External Fields](@ref)) — the mean-field Coulomb term, added automatically; you should
   not normally need to construct it yourself.
 
@@ -32,5 +32,5 @@ Depth = 1
 `ElectrolyteModel`.
 
 ```@docs
-cDFT.DH
+ClassicalDFT.DH
 ```

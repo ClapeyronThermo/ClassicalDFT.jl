@@ -1,9 +1,9 @@
 # Electrolytes
 
 Electrolyte solutions add long-ranged electrostatics on top of the short-ranged
-interactions already covered — cDFT models this with an
-[`ElectrolyteDFTSystem`](@ref cDFT.ElectrolyteDFTSystem) rather than a plain
-[`DFTSystem`](@ref cDFT.DFTSystem). See [Electrolytes](../models/electrolytes.md) under
+interactions already covered — ClassicalDFT models this with an
+[`ElectrolyteDFTSystem`](@ref ClassicalDFT.ElectrolyteDFTSystem) rather than a plain
+[`DFTSystem`](@ref ClassicalDFT.DFTSystem). See [Electrolytes](../models/electrolytes.md) under
 **Available Models** for how the pieces (neutral model, ion model, electrostatic field)
 fit together.
 
@@ -11,10 +11,10 @@ fit together.
 
 The bulk electrolyte equation of state itself comes from Clapeyron, combining a neutral
 model (e.g. `pharmaPCSAFT`, used internally by `ePCSAFT`) with an ion model (here,
-[`DH`](@ref cDFT.DH), the Debye-Hückel correction) and a set of ion charges:
+[`DH`](@ref ClassicalDFT.DH), the Debye-Hückel correction) and a set of ion charges:
 
 ```julia
-julia> using Clapeyron, cDFT
+julia> using Clapeyron, ClassicalDFT
 
 julia> model = ePCSAFT(["water08"], ["sodium", "chloride"])
 ```
@@ -28,8 +28,8 @@ julia> model = ePCSAFT(["water08"], ["sodium", "chloride"])
 
 An `ElectrolyteDFTSystem` is built the same way as a plain `DFTSystem` — pass the
 electrolyte `model`, a `structure`, and (optionally) a neutral-fluid external field such as
-a [`Steele`](@ref cDFT.Steele) wall. The mean-field [`ElectrostaticPotential`](@ref
-cDFT.ElectrostaticPotential) is attached automatically, so you don't need to construct it
+a [`Steele`](@ref ClassicalDFT.Steele) wall. The mean-field [`ElectrostaticPotential`](@ref
+ClassicalDFT.ElectrostaticPotential) is attached automatically, so you don't need to construct it
 yourself:
 
 ```julia
@@ -41,11 +41,11 @@ julia> v = Clapeyron.volume(model.neutralmodel, p, T, x)
 
 julia> ρbulk = x ./ v
 
-julia> L = cDFT.length_scale(model.neutralmodel)
+julia> L = ClassicalDFT.length_scale(model.neutralmodel)
 
 julia> structure = Uniform1DCyl((p, T), ρbulk, [0.0, 20L], 151)
 
-julia> system = cDFT.ElectrolyteDFTSystem(model, structure)
+julia> system = ClassicalDFT.ElectrolyteDFTSystem(model, structure)
 
 julia> ρ = initialize_profiles(system)
 
@@ -54,7 +54,7 @@ julia> converge!(system, ρ)
 
 `ρ` now contains one density field per neutral-model bead plus one per ion — the ion
 fields are appended after the neutral fields (see [`ElectrolyteDFTSystem`](@ref
-cDFT.ElectrolyteDFTSystem) in the API reference for the exact field layout).
+ClassicalDFT.ElectrolyteDFTSystem) in the API reference for the exact field layout).
 
 ```julia
 julia> using CairoMakie

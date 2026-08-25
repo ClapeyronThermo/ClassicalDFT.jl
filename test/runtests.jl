@@ -1,11 +1,11 @@
 using Test
-t1 = @elapsed using cDFT
+t1 = @elapsed using ClassicalDFT
 using Clapeyron
 using GCIdentifier
 using ChemicalIdentifiers
-@info "Loading cDFT took $(round(t1,digits = 2)) seconds"
+@info "Loading ClassicalDFT took $(round(t1,digits = 2)) seconds"
 
-@testset verbose = true "cDFT" begin
+@testset verbose = true "ClassicalDFT" begin
     include("test_models.jl")
     include("test_dgt.jl")
     include("test_scft.jl")

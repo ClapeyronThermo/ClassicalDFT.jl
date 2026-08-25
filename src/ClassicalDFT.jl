@@ -1,18 +1,18 @@
 """
-    cDFT
+    ClassicalDFT
 
-A comprehensive library of classical Density Functional Theory (cDFT) models, along with a simple framework for developing your own. `cDFT` builds on top of [Clapeyron.jl](https://github.com/ClapeyronThermo/Clapeyron.jl) models (`PCSAFT`, `SAFTVRMie`, `SAFTgammaMie`, electrolyte models, ...) to compute inhomogeneous density profiles, surface/interfacial tensions and adsorption isotherms.
+A comprehensive library of classical Density Functional Theory (ClassicalDFT) models, along with a simple framework for developing your own. `ClassicalDFT` builds on top of [Clapeyron.jl](https://github.com/ClapeyronThermo/Clapeyron.jl) models (`PCSAFT`, `SAFTVRMie`, `SAFTgammaMie`, electrolyte models, ...) to compute inhomogeneous density profiles, surface/interfacial tensions and adsorption isotherms.
 
 Example usage:
 ```julia
-julia> using Clapeyron, cDFT
+julia> using Clapeyron, ClassicalDFT
 
 julia> model = PCSAFT(["water","octane"])
 
 julia> interfacial_tension(model,1e5,298.15,[0.5,0.5])
 ```
 """
-module cDFT
+module ClassicalDFT
 
 using LinearAlgebra
 using NLSolvers, FFTW, LinearAlgebra

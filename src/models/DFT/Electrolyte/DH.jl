@@ -11,7 +11,7 @@ end
 # Clapeyron's `dh_term(x)` (models/Electrolytes/Ion/DH.jl) rather than called directly:
 # that function hardcodes Float64 literals internally, so it always returns Float64
 # regardless of its input's type — fine for Clapeyron's own bulk (non-autodiff-critical)
-# use, but inside cDFT's Enzyme-differentiated kernel this produced a type-unstable
+# use, but inside ClassicalDFT's Enzyme-differentiated kernel this produced a type-unstable
 # Union{Float32,Float64} accumulator under precision=Float32 (rejected by Enzyme's strict
 # type analysis). Keeping our own FP-generic copy, with `FP`-converted coefficient tuples
 # threaded through `params` (same convention as `DD_consts`/`QQ_consts`/`SAFTVRMIE_A`
@@ -46,7 +46,7 @@ end
 
 The (restricted primitive model) Debye-Hückel ion-ion electrostatic correction. This is
 used as the `ionmodel` of a Clapeyron `ElectrolyteModel` (e.g. `ePCSAFT`), together with a
-neutral bulk model, to build an [`ElectrolyteDFTSystem`](@ref cDFT.ElectrolyteDFTSystem).
+neutral bulk model, to build an [`ElectrolyteDFTSystem`](@ref ClassicalDFT.ElectrolyteDFTSystem).
 No chain propagator is required — ions are treated with an `IdealPropagator`.
 
 The bulk model can be obtained from Clapeyron.

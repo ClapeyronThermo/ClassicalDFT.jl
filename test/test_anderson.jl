@@ -1,4 +1,4 @@
-using Test, cDFT
+using Test, ClassicalDFT
 
 @testset "Anderson acceleration (aasol)" begin
     # Toth-Kelley fixed-point problem from aasol's own docstring (src/utils/anderson.jl)
@@ -12,7 +12,7 @@ using Test, cDFT
 
     @testset "Default mixing (beta=1.0)" begin
         u0 = ones(2); m = 2; Vstore = zeros(2, 3*m+3)
-        aout = cDFT.aasol(tothk!, u0, m, Vstore; rtol=1e-10)
+        aout = ClassicalDFT.aasol(tothk!, u0, m, Vstore; rtol=1e-10)
         @test aout.idid
         @test aout.errcode == 0
         @test aout.history[end] < 1e-10
@@ -21,7 +21,7 @@ using Test, cDFT
 
     @testset "beta=0.5 mixing" begin
         u0 = ones(2); m = 2; Vstore = zeros(2, 3*m+3)
-        bout = cDFT.aasol(tothk!, u0, m, Vstore; rtol=1e-10, beta=0.5)
+        bout = ClassicalDFT.aasol(tothk!, u0, m, Vstore; rtol=1e-10, beta=0.5)
         @test bout.idid
         @test bout.errcode == 0
         @test bout.history[end] < 1e-10
@@ -29,7 +29,7 @@ using Test, cDFT
 
     @testset "Picard warmup" begin
         u0 = ones(2); m = 2; Vstore = zeros(2, 3*m+3)
-        aout = cDFT.aasol(tothk!, u0, m, Vstore; picard_maxit=5, picard_beta=0.5, rtol=1e-10)
+        aout = ClassicalDFT.aasol(tothk!, u0, m, Vstore; picard_maxit=5, picard_beta=0.5, rtol=1e-10)
         @test aout.idid
         @test aout.errcode == 0
         @test aout.history[end] < 1e-10

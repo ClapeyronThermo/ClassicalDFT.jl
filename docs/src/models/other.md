@@ -1,5 +1,5 @@
 ```@meta
-CurrentModule = cDFT
+CurrentModule = ClassicalDFT
 ```
 
 # Other Functionals
@@ -17,17 +17,17 @@ Two further Weighted Density Functionals developed by Langenbach (2017), neither
 a chain propagator. Bulk equations of state are again obtained from Clapeyron.
 
 ```@docs
-cDFT.COFFEE
-cDFT.PeTS
+ClassicalDFT.COFFEE
+ClassicalDFT.PeTS
 ```
 
 ## Density Gradient Theory (DGT)
 
 A cheaper alternative route to interfacial properties: rather than a full weighted-density
-functional, [`DGTSystem`](@ref cDFT.DGTSystem) augments a bulk `model` with a square-gradient
+functional, [`DGTSystem`](@ref ClassicalDFT.DGTSystem) augments a bulk `model` with a square-gradient
 correction, parameterised by an influence parameter supplied by a `GradientModel` such as
 `ConstGradient`.
 
 ```@docs
-cDFT.ConstGradient
+ClassicalDFT.ConstGradient
 ```

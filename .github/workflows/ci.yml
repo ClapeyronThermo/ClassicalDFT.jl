@@ -16,7 +16,7 @@ jobs:
   test:
     name: Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
     runs-on: ${{ matrix.os }}
-    if: "!contains(github.event.head_commit.message, 'cDFT skip ci')"
+    if: "!contains(github.event.head_commit.message, 'ClassicalDFT skip ci')"
     timeout-minutes: 80
     strategy:
       fail-fast: false

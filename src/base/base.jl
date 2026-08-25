@@ -8,11 +8,11 @@ abstract type GradientModel end
 """
     AbstractcDFTSystem
 
-Supertype for every system cDFT.jl can converge via [`converge!`](@ref): [`DFTSystem`](@ref), [`DGTSystem`](@ref), [`ElectrolyteDFTSystem`](@ref) and [`SCFTSystem`](@ref)
+Supertype for every system ClassicalDFT.jl can converge via [`converge!`](@ref): [`DFTSystem`](@ref), [`DGTSystem`](@ref), [`ElectrolyteDFTSystem`](@ref) and [`SCFTSystem`](@ref)
 """
 abstract type AbstractcDFTSystem end
 
-const DB_PATH = normpath(Base.pkgdir(cDFT),"database")
+const DB_PATH = normpath(Base.pkgdir(ClassicalDFT),"database")
 
 include("devices.jl")
 include("structure.jl")

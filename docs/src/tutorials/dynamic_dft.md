@@ -15,7 +15,7 @@ coexisting bulk densities is thermodynamically unstable, so it will spontaneousl
 phase-separate once perturbed:
 
 ```julia
-julia> using Clapeyron, cDFT, SciMLBase, OrdinaryDiffEqStabilizedRK, DiffEqCallbacks
+julia> using Clapeyron, ClassicalDFT, SciMLBase, OrdinaryDiffEqStabilizedRK, DiffEqCallbacks
 
 julia> model = PCSAFT(["acetone", "hexane"])
 
@@ -27,11 +27,11 @@ julia> ρ1, ρ2 = x[1,:]./volume(model, p, T, x[1,:]), x[2,:]./volume(model, p, 
 
 julia> ρb = (ρ1 .+ ρ2) ./ 2  # inside the miscibility gap
 
-julia> L = cDFT.length_scale(model)
+julia> L = ClassicalDFT.length_scale(model)
 
 julia> ngrid = 101
 
-julia> structure = cDFT.Uniform2DCart((p, T), ρb, [-20L 20L; -20L 20L], (ngrid, ngrid))
+julia> structure = ClassicalDFT.Uniform2DCart((p, T), ρb, [-20L 20L; -20L 20L], (ngrid, ngrid))
 
 julia> system = DFTSystem(model, structure)
 

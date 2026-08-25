@@ -7,7 +7,7 @@
     T = 298.15
     (p, vl, _) = Clapeyron.saturation_pressure(model, T)
     ρbulk = [1/vl]
-    L = cDFT.length_scale(model)
+    L = ClassicalDFT.length_scale(model)
 
     letters = String.(unique(first.(split.(model.groups.flattenedgroups, "_"))))
     @test length(letters) >= 2
@@ -21,10 +21,10 @@
     end
 
     function check_morphology(system)
-        ρ = cDFT.initialize_profiles(system)
+        ρ = ClassicalDFT.initialize_profiles(system)
         @test all(ρ .> 0)
 
-        nd = cDFT.dimension(system.structure)
+        nd = ClassicalDFT.dimension(system.structure)
         group_letters = first.(split.(model.groups.flattenedgroups, "_"))
         core_idx = findfirst(l -> l in core, group_letters)
         matrix_idx = findfirst(l -> !(l in core), group_letters)
@@ -38,46 +38,46 @@
     end
 
     @testset "LamellarStack1DCart" begin
-        structure = cDFT.LamellarStack1DCart((p,T), ρbulk, [-5L, 5L], 51; core_groups=core)
+        structure = ClassicalDFT.LamellarStack1DCart((p,T), ρbulk, [-5L, 5L], 51; core_groups=core)
         check_morphology(DFTSystem(model, structure))
     end
 
     @testset "LamellarStack2DCart" begin
-        structure = cDFT.LamellarStack2DCart((p,T), ρbulk, [-5L 5L; -5L 5L], (21,21); core_groups=core)
+        structure = ClassicalDFT.LamellarStack2DCart((p,T), ρbulk, [-5L 5L; -5L 5L], (21,21); core_groups=core)
         check_morphology(DFTSystem(model, structure))
     end
 
     @testset "LamellarStack3DCart" begin
-        structure = cDFT.LamellarStack3DCart((p,T), ρbulk, [-5L 5L; -5L 5L; -5L 5L], (11,11,11); core_groups=core)
+        structure = ClassicalDFT.LamellarStack3DCart((p,T), ρbulk, [-5L 5L; -5L 5L; -5L 5L], (11,11,11); core_groups=core)
         check_morphology(DFTSystem(model, structure))
     end
 
     @testset "HexLattice2DCart" begin
         Lx = 5L
         bounds = [-Lx Lx; -sqrt(3)*Lx sqrt(3)*Lx]
-        structure = cDFT.HexLattice2DCart((p,T), ρbulk, bounds, (11,19); core_groups=core)
+        structure = ClassicalDFT.HexLattice2DCart((p,T), ρbulk, bounds, (11,19); core_groups=core)
         check_morphology(DFTSystem(model, structure))
     end
 
     @testset "HexLattice3DCart" begin
         Lx = 5L
         bounds = [-Lx Lx; -sqrt(3)*Lx sqrt(3)*Lx; -Lx Lx]
-        structure = cDFT.HexLattice3DCart((p,T), ρbulk, bounds, (11,19,5); core_groups=core)
+        structure = ClassicalDFT.HexLattice3DCart((p,T), ρbulk, bounds, (11,19,5); core_groups=core)
         check_morphology(DFTSystem(model, structure))
     end
 
     @testset "BCC3DCart" begin
-        structure = cDFT.BCC3DCart((p,T), ρbulk, [-5L 5L; -5L 5L; -5L 5L], (11,11,11); core_groups=core)
+        structure = ClassicalDFT.BCC3DCart((p,T), ρbulk, [-5L 5L; -5L 5L; -5L 5L], (11,11,11); core_groups=core)
         check_morphology(DFTSystem(model, structure))
     end
 
     @testset "Gyroid3DCart" begin
-        structure = cDFT.Gyroid3DCart((p,T), ρbulk, [-5L 5L; -5L 5L; -5L 5L], (11,11,11); core_groups=core)
+        structure = ClassicalDFT.Gyroid3DCart((p,T), ρbulk, [-5L 5L; -5L 5L; -5L 5L], (11,11,11); core_groups=core)
         check_morphology(DFTSystem(model, structure))
     end
 
     @testset "unknown core_groups errors clearly" begin
-        structure = cDFT.BCC3DCart((p,T), ρbulk, [-5L 5L; -5L 5L; -5L 5L], (5,5,5); core_groups=["not_a_real_group"])
-        @test_throws ErrorException cDFT.initialize_profiles(DFTSystem(model, structure))
+        structure = ClassicalDFT.BCC3DCart((p,T), ρbulk, [-5L 5L; -5L 5L; -5L 5L], (5,5,5); core_groups=["not_a_real_group"])
+        @test_throws ErrorException ClassicalDFT.initialize_profiles(DFTSystem(model, structure))
     end
 end

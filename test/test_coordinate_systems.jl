@@ -6,9 +6,9 @@ end
 
 # Evaluate δF_res/δρ at uniform bulk density and compare to Clapeyron μ_res.
 function test_bulk_μres(label, system, ρbulk; tol=1e-5)
-    ρ = cDFT.initialize_profiles(system)
-    μ_dft = cDFT.δFδρ_res(system, ρ)
-    nd = cDFT.dimension(system)
+    ρ = ClassicalDFT.initialize_profiles(system)
+    μ_dft = ClassicalDFT.δFδρ_res(system, ρ)
+    nd = ClassicalDFT.dimension(system)
     nb = sum(system.species.nbeads)
     nc = length(system.model)
 
@@ -33,8 +33,8 @@ function test_bulk_μres(label, system, ρbulk; tol=1e-5)
 end
 
 function test_bulk_μres_electrolyte(label, system, ρbulk; tol=1e-4)
-    ρ     = cDFT.initialize_profiles(system)
-    μ_dft = cDFT.δFδρ_res(system, ρ)
+    ρ     = ClassicalDFT.initialize_profiles(system)
+    μ_dft = ClassicalDFT.δFδρ_res(system, ρ)
     nbeads = system.species.nbeads
     nc     = length(nbeads)
 
@@ -64,7 +64,7 @@ end
     p = 1e7
     v = Clapeyron.volume(model, p, T, [1.0]; phase=:liquid)
     ρbulk = [1/v]
-    L = cDFT.length_scale(model)
+    L = ClassicalDFT.length_scale(model)
 
     @testset "PCSAFT methane" begin
         s_cart = Uniform1DCart((p,T), ρbulk, [-10L, 10L], 101)
@@ -85,7 +85,7 @@ end
         T_but = 298.15
         (p_but, vl_but, _) = Clapeyron.saturation_pressure(model_but, T_but)
         ρbulk_but = [1/vl_but]
-        L_but = cDFT.length_scale(model_but)
+        L_but = ClassicalDFT.length_scale(model_but)
 
         # The propagator's bond-length kernel (~sum of two group radii, scaled by π) is
         # much larger than the FMT weighted-density half-diameters, so the QDHT aperture
@@ -109,7 +109,7 @@ end
         x_elec = [0.9, 0.05, 0.05]
         v_elec = Clapeyron.volume(model_elec.neutralmodel, p_elec, T_elec, x_elec)
         ρbulk_elec = x_elec / v_elec
-        L_elec = cDFT.length_scale(model_elec.neutralmodel)
+        L_elec = ClassicalDFT.length_scale(model_elec.neutralmodel)
 
         # The Coulomb kernel diverges at small k (long-ranged in real space), so unlike
         # the neutral case, accuracy here is governed by the QDHT aperture (domain size)
@@ -117,11 +117,11 @@ end
         # apertures without more points under-resolve the short-range ion-size features
         # and can fail outright (see coordinate_system.md implementation notes).
         s_sphr = Uniform1DSphr((p_elec,T_elec), ρbulk_elec, [0.0, 30L_elec], 151)
-        sys_sphr = cDFT.ElectrolyteDFTSystem(model_elec, s_sphr)
+        sys_sphr = ClassicalDFT.ElectrolyteDFTSystem(model_elec, s_sphr)
         test_bulk_μres_electrolyte("1D Sphr (electrolyte)", sys_sphr, ρbulk_elec)
 
         s_cyl = Uniform1DCyl((p_elec,T_elec), ρbulk_elec, [0.0, 20L_elec], 151)
-        sys_cyl = cDFT.ElectrolyteDFTSystem(model_elec, s_cyl)
+        sys_cyl = ClassicalDFT.ElectrolyteDFTSystem(model_elec, s_cyl)
         test_bulk_μres_electrolyte("1D Cyl (electrolyte)", sys_cyl, ρbulk_elec)
     end
 end
@@ -131,20 +131,20 @@ end
     T_pc = 150.0; p_pc = 1e7
     v_pc = Clapeyron.volume(model_pc, p_pc, T_pc, [1.0]; phase=:liquid)
     ρbulk_pc = [1/v_pc]
-    L_pc = cDFT.length_scale(model_pc)
+    L_pc = ClassicalDFT.length_scale(model_pc)
 
     @testset "PCSAFT methane — non-Cartesian δFδρ_res" begin
         @testset "1D Sphr" begin
             s = Uniform1DSphr((p_pc, T_pc), ρbulk_pc, [0.0, 10L_pc], 101)
             sys = DFTSystem(model_pc, s)
-            ρ = cDFT.initialize_profiles(sys)
-            @test_nowarn cDFT.δFδρ_res(sys, ρ)
+            ρ = ClassicalDFT.initialize_profiles(sys)
+            @test_nowarn ClassicalDFT.δFδρ_res(sys, ρ)
         end
         @testset "1D Cyl" begin
             s = Uniform1DCyl((p_pc, T_pc), ρbulk_pc, [0.0, 20L_pc], 101)
             sys = DFTSystem(model_pc, s)
-            ρ = cDFT.initialize_profiles(sys)
-            @test_nowarn cDFT.δFδρ_res(sys, ρ)
+            ρ = ClassicalDFT.initialize_profiles(sys)
+            @test_nowarn ClassicalDFT.δFδρ_res(sys, ρ)
         end
     end
 end

@@ -1,24 +1,24 @@
 # Getting Started
 
-Every cDFT calculation is built from the same four ingredients:
+Every ClassicalDFT calculation is built from the same four ingredients:
 
 1. A bulk **`model`** — a Clapeyron equation of state (e.g. `PCSAFT`).
 2. A **`structure`** — the geometry, grid and conditions the density profile lives on
    (see [Choosing a Geometry & Adsorption](@ref)).
 3. Optionally, one or more **external fields** — a wall, a solute, a charged surface (see
    [External Fields](@ref)).
-4. **`options`** — device (CPU/GPU) and solver settings (see [`DFTOptions`](@ref cDFT.DFTOptions)).
+4. **`options`** — device (CPU/GPU) and solver settings (see [`DFTOptions`](@ref ClassicalDFT.DFTOptions)).
 
-These compose into a [`DFTSystem`](@ref cDFT.DFTSystem), which [`converge!`](@ref cDFT.converge!)
+These compose into a [`DFTSystem`](@ref ClassicalDFT.DFTSystem), which [`converge!`](@ref ClassicalDFT.converge!)
 solves in place for the equilibrium density profile.
 
 ## A fluid next to a wall
 
 Let's compute the density profile of liquid methane next to a graphite wall, using the
-[`Steele`](@ref cDFT.Steele) 9-3 potential.
+[`Steele`](@ref ClassicalDFT.Steele) 9-3 potential.
 
 ```julia
-julia> using Clapeyron, cDFT
+julia> using Clapeyron, ClassicalDFT
 
 julia> model = PCSAFT(["methane"])
 PCSAFT{BasicIdeal} with 1 component:
@@ -31,7 +31,7 @@ julia> v = Clapeyron.volume(model, p, T, [1.0]; phase=:liquid)
 
 julia> ρbulk = [1/v]
 
-julia> L = cDFT.length_scale(model)  # a characteristic length (≈ σ) for choosing grid bounds
+julia> L = ClassicalDFT.length_scale(model)  # a characteristic length (≈ σ) for choosing grid bounds
 ```
 
 Build the walls using a 1D Cartesian structure:
@@ -76,5 +76,5 @@ bulk density `ρbulk[1]` far from it.
 - [Choosing a Geometry & Adsorption](@ref) demonstrates the other structure types (curved
   surfaces, 2D/3D boxes, interfaces) and builds on this exact setup to compute adsorption
   isotherms at planar and curved surfaces.
-- [`adsorption(model, surface, p, T, n)`](@ref cDFT.adsorption) is a convenience wrapper
+- [`adsorption(model, surface, p, T, n)`](@ref ClassicalDFT.adsorption) is a convenience wrapper
   that does all of the above in one call for the common case of a single planar wall.

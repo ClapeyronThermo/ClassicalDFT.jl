@@ -1,10 +1,10 @@
 # Figures for docs/src/tutorials/planar_adsorption.md
 include("common.jl")
-using Clapeyron, cDFT, CairoMakie
+using Clapeyron, ClassicalDFT, CairoMakie
 
 model = PCSAFT(["carbon dioxide"])
 p, T = 1e6, 298.15
-L = cDFT.length_scale(model)
+L = ClassicalDFT.length_scale(model)
 
 # Slit-pore density profile.
 width = 50e-10
@@ -13,7 +13,7 @@ v = Clapeyron.volume(model, p, T, [1.0])
 ρbulk = [1/v]
 structure = Uniform1DCart((p, T), ρbulk, [0.6L, width - 0.6L], 201)
 system = DFTSystem(model, structure, surface)
-ρ = cDFT.initialize_profiles(system)
+ρ = ClassicalDFT.initialize_profiles(system)
 converge!(system, ρ)
 save(assetpath("planar_adsorption_profile.png"), plot(system, ρ))
 

@@ -1,28 +1,28 @@
 # Group-Contribution & Heterosegmented Chains
 
-The models covered so far ([`PCSAFT`](@ref cDFT.PCSAFT), etc.) treat each molecule as a
-single effective bead. [`HeterogcPCPSAFT`](@ref cDFT.HeterogcPCPSAFT) instead resolves a
+The models covered so far ([`PCSAFT`](@ref ClassicalDFT.PCSAFT), etc.) treat each molecule as a
+single effective bead. [`HeterogcPCPSAFT`](@ref ClassicalDFT.HeterogcPCPSAFT) instead resolves a
 molecule's actual group topology — each functional group is its own bead, bonded together
 via a chain propagator — which matters when the *shape* of a molecule affects how it packs
 near a surface or interface (e.g. long-chain alcohols, or block copolymers).
 
 ## Automatic connectivity from a name or SMILES string
 
-For real, identifiable molecules, cDFT can resolve the group topology automatically from
+For real, identifiable molecules, ClassicalDFT can resolve the group topology automatically from
 just the component name, via the `GCIdentifier`/`ChemicalIdentifiers` extension (see
 [Installation](@ref) and the [FAQ](@ref)):
 
 ```julia
-julia> using Clapeyron, cDFT, GCIdentifier, ChemicalIdentifiers
+julia> using Clapeyron, ClassicalDFT, GCIdentifier, ChemicalIdentifiers
 
 julia> model = HeterogcPCPSAFT(["1-butanol"])
 ```
 
 This works for anything `ChemicalIdentifiers` can resolve to a SMILES string. If you'd
 rather supply the SMILES directly (e.g. for a component whose name doesn't resolve
-cleanly), pass a [`smiles`](@ref cDFT.smiles) via the `mol_structure` keyword — note that
-`mol_structure` is a keyword of [`DFTSystem`](@ref cDFT.DFTSystem) itself, not of the model
-constructor, since it controls how cDFT expands the bulk model into bonded beads for the
+cleanly), pass a [`smiles`](@ref ClassicalDFT.smiles) via the `mol_structure` keyword — note that
+`mol_structure` is a keyword of [`DFTSystem`](@ref ClassicalDFT.DFTSystem) itself, not of the model
+constructor, since it controls how ClassicalDFT expands the bulk model into bonded beads for the
 DFT calculation:
 
 ```julia
@@ -35,7 +35,7 @@ julia> system = DFTSystem(model, structure; mol_structure = Dict("1-butanol" => 
 
 For pseudo-components that aren't real, identifiable molecules — most notably block
 copolymers — describe the bead sequence directly with [`custom_structure`](@ref
-cDFT.custom_structure). Each non-parenthesis character is one group instance, bonded to
+ClassicalDFT.custom_structure). Each non-parenthesis character is one group instance, bonded to
 the previous one in sequence; parentheses open/close a branch:
 
 ```julia
@@ -66,7 +66,7 @@ julia> (p, vl, _) = Clapeyron.saturation_pressure(model, T)
 
 julia> ρbulk = [1/vl]
 
-julia> L = cDFT.length_scale(model)
+julia> L = ClassicalDFT.length_scale(model)
 
 julia> structure = Uniform1DCyl((p, T), ρbulk, [0.0, 60L], 151)
 

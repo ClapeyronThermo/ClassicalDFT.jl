@@ -19,7 +19,7 @@ AASol(system::SCFTSystem;maxit=5000,beta=1e-2,tol=1e-6,anderson_start=1e-2,ander
     abstract type cDFTProblem{S} end
     cDFTProblem(system::S;kwargs...) where S
 
-Abstract type for all types of cDFT.jl problems.
+Abstract type for all types of ClassicalDFT.jl problems.
 A `cDFTProblem` is just a wrapper of a `AbstractcDFTSystem`, along with different options relevant to the system during the convergence phase, and independent of the solver type used.
 """
 abstract type cDFTProblem{S} end
@@ -193,7 +193,7 @@ If only keyword arguments are used, then the problem is solved via the Anderson 
 - `DGTSytem`            : same as `DFTSystem`
 - `ElectrolyteDFTSystem`: same as `DFTSystem`
 
-## Problem arguments (passed to [`cDFTProblem(system,kwargs...)`](@ref cDFT.cDFTProblem))
+## Problem arguments (passed to [`cDFTProblem(system,kwargs...)`](@ref ClassicalDFT.cDFTProblem))
 - `log_interval::Int = 0`: Log the free energy every N iterations (0 = never).
 - `save_interval::Int = 0`: Call `save_callback` every N iterations (0 = never).
 - `save_callback = nothing`: a function of the form `f(iter, ρ_array)` called at each save interval. SCFT systems require the function form `f(iter, ρ_array, w_array)` instead.
@@ -229,7 +229,7 @@ function converge!(prob::DFTProblem{S}, method::AASol, ρ::AbstractArray) where 
     #nd = dimension(system)
     #nbeads = size(ρ,nd+1)
 
-    δfδρ_res, cache_model, cache_external, cache_propagator = cDFT.preallocate(system, ρ)
+    δfδρ_res, cache_model, cache_external, cache_propagator = ClassicalDFT.preallocate(system, ρ)
     ln_Gx = similar(ρ)
     caches = (; cache_model, cache_external, cache_propagator, ln_Gx)
 

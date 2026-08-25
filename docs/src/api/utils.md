@@ -1,5 +1,5 @@
 ```@meta
-CurrentModule = cDFT
+CurrentModule = ClassicalDFT
 ```
 
 ## Contents
@@ -12,20 +12,20 @@ Depth = 1
 ## Functions
 
 ```@docs
-cDFT.∫
-cDFT.texlabel
+ClassicalDFT.∫
+ClassicalDFT.texlabel
 ```
 
 ## Group Connectivity
 
 Used to specify a heterosegmented group-contribution component's bead topology, via the
-`mol_structure` keyword of [`DFTSystem`](@ref cDFT.DFTSystem) — see
+`mol_structure` keyword of [`DFTSystem`](@ref ClassicalDFT.DFTSystem) — see
 [Group-Contribution & Heterosegmented Chains](@ref).
 
 ```@docs
-cDFT.MolStructure
-cDFT.SMILESStructure
-cDFT.smiles
-cDFT.CustomStructure
-cDFT.custom_structure
+ClassicalDFT.MolStructure
+ClassicalDFT.SMILESStructure
+ClassicalDFT.smiles
+ClassicalDFT.CustomStructure
+ClassicalDFT.custom_structure
 ```

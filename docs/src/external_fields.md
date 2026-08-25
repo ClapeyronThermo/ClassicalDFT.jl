@@ -1,12 +1,12 @@
 ```@meta
-CurrentModule = cDFT
+CurrentModule = ClassicalDFT
 ```
 
 # External Fields
 
 External fields represent anything outside the fluid itself that the density profile
 responds to: a solid wall, an atomistic surface, or (for electrolytes) a mean-field
-electrostatic potential. They're passed to [`DFTSystem`](@ref cDFT.DFTSystem) alongside the
+electrostatic potential. They're passed to [`DFTSystem`](@ref ClassicalDFT.DFTSystem) alongside the
 `model` and `structure`.
 
 ## Contents
@@ -19,6 +19,6 @@ Depth = 1
 ## Types and Constructors
 
 ```@docs
-cDFT.Steele
-cDFT.ElectrostaticPotential
+ClassicalDFT.Steele
+ClassicalDFT.ElectrostaticPotential
 ```

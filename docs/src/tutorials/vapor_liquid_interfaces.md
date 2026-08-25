@@ -1,7 +1,7 @@
 # Vapour-Liquid Interfaces
 
-cDFT can resolve the density profile across a vapour-liquid (or liquid-liquid) interface
-directly, using a [`TwoPhase1DCart`](@ref cDFT.TwoPhase1DCart) structure initialised as a
+ClassicalDFT can resolve the density profile across a vapour-liquid (or liquid-liquid) interface
+directly, using a [`TwoPhase1DCart`](@ref ClassicalDFT.TwoPhase1DCart) structure initialised as a
 sigmoidal profile between two bulk densities, and integrate the resulting profile into a
 surface or interfacial tension.
 
@@ -12,11 +12,11 @@ surface or interfacial tension.
 
 ## Surface tension of a pure fluid
 
-[`surface_tension`](@ref cDFT.surface_tension) takes a model and saturation conditions,
+[`surface_tension`](@ref ClassicalDFT.surface_tension) takes a model and saturation conditions,
 and handles the phase-equilibrium calculation, structure setup and convergence internally:
 
 ```julia
-julia> using Clapeyron, cDFT
+julia> using Clapeyron, ClassicalDFT
 
 julia> model = PCSAFT(["ethanol", "hexane"])
 
@@ -33,7 +33,7 @@ defaults to `[1.0]`.)
 
 ## Interfacial tension between two liquid phases
 
-For a liquid-liquid interface, [`interfacial_tension`](@ref cDFT.interfacial_tension) takes
+For a liquid-liquid interface, [`interfacial_tension`](@ref ClassicalDFT.interfacial_tension) takes
 the compositions of the two coexisting phases directly — typically obtained from a
 Clapeyron `tp_flash` — rather than doing a saturation calculation itself:
 
@@ -50,7 +50,7 @@ julia> γ = interfacial_tension(model, p, T, x[1,:], x[2,:])
 
 ## Inspecting the density profile
 
-Both convenience functions converge a full [`DFTSystem`](@ref cDFT.DFTSystem) internally,
+Both convenience functions converge a full [`DFTSystem`](@ref ClassicalDFT.DFTSystem) internally,
 but only return the scalar tension. To see the actual interfacial density profile, build
 the `TwoPhase1DCart` system by hand — this is exactly what `surface_tension`/
 `interfacial_tension` do under the hood:
@@ -64,7 +64,7 @@ julia> (p, vl, vv) = saturation_pressure(model, T)
 
 julia> ρ1, ρ2 = [1.0]./vl, [1.0]./vv
 
-julia> L = cDFT.length_scale(model)
+julia> L = ClassicalDFT.length_scale(model)
 
 julia> structure = TwoPhase1DCart((p, T), ρ1, ρ2, [-10L, 10L], 201)
 

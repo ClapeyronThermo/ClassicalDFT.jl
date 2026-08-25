@@ -1,5 +1,5 @@
 ```@meta
-CurrentModule = cDFT
+CurrentModule = ClassicalDFT
 ```
 
 # Self-Consistent Field Theory (SCFT)
@@ -16,10 +16,10 @@ density that generated it. This makes it substantially cheaper for large, flexib
 architectures, at the cost of the coarser Flory-Huggins/Gaussian-chain approximations it
 relies on in place of a full pairwise free-energy functional.
 
-- [`SCFTSystem`](@ref cDFT.SCFTSystem) (see [System](../api/system.md)) — composes an
+- [`SCFTSystem`](@ref ClassicalDFT.SCFTSystem) (see [System](../api/system.md)) — composes an
   `SCFTLatticeFluid` bulk model with a structure and chain architecture, mirroring
   `DFTSystem`.
-- [`DiscreteGaussianChainPropagator`](@ref cDFT.DiscreteGaussianChainPropagator) (see
+- [`DiscreteGaussianChainPropagator`](@ref ClassicalDFT.DiscreteGaussianChainPropagator) (see
   [Propagators](../api/propagators.md)) — the chain propagator every `SCFTSystem` uses.
 
 See the [Self-Consistent Field Theory tutorial](../tutorials/scft.md) for a worked
@@ -43,7 +43,7 @@ keyword — the same `custom_structure`/connectivity mechanism `HeterogcPCPSAFT`
 `SAFTgammaMie` use.
 
 ```@docs
-cDFT.SCFTLatticeFluid
+ClassicalDFT.SCFTLatticeFluid
 ```
 
 ## Utilities
@@ -54,5 +54,5 @@ cDFT.SCFTLatticeFluid
 but also handy on its own for inspecting a system's intended bulk composition.
 
 ```@docs
-cDFT.compute_bulk_densities
+ClassicalDFT.compute_bulk_densities
 ```
