@@ -46,13 +46,16 @@ function TangentHSPropagator(model::EoSModel,species::DFTSpecies,structure::Unio
     L = length_scale(model)
     ω̄ = _scaled_ω(structure_ω(structure, device, FP), L, FP).ω̄
     Ω = allocate(device,FP,ngrid...,nbeads,nbeads)
+    
+    σ = sinc.(ω̄ ./ maximum(ω̄))
+
     for i in @comps
         l = 1
         for j in @chain(i)
             for k in @chain(i)[l:end]
                 R = (species.size[j] + species.size[k])/L*π
 
-                val = @. sin(ω̄*R)/ω̄ / R
+                val = @. sin(ω̄*R)/ω̄ / R * σ
 
                 selectdim(selectdim(Ω, nd+1, j), nd+1, k) .= val
                 selectdim(selectdim(Ω, nd+1, k), nd+1, j) .= val

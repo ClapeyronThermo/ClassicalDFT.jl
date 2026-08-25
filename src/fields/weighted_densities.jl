@@ -217,6 +217,20 @@ function VWeightedDensity(type::Symbol,width::Vector{Float64},ω, ngrid::NTuple{
                 FP(4π)*im*R,                                    # ω̄=0 case
                 FP(4π)*im*ω./ω̄.^3 .*(sin.(ω̄R)-R.*ω̄.*cos.(ω̄R))        # ω̄≠0 case
             )
+        # Isotropic Lanczos σ-factor: unlike :∇ρ above (an exact operator that must
+        # stay untouched), this kernel is structurally a differentiation operator too
+        # (Ω ∝ i·ω·(...), the Fourier multiplier for ∇ of a radially-symmetric scalar
+        # potential — see the QDHT counterpart's docstring below), which inherently
+        # amplifies high-k/Nyquist content. σ(ω̄)=sinc(ω̄/ω̄_max) tapers it to 0 at the
+        # grid's own resolution limit, damping that amplification. σ(0)=1, so the DC
+        # (ω̄=0) branch above is unaffected. ω̄_max is the inscribed-sphere Nyquist
+        # radius (min over axes of that axis's own max |ω|), derived from ω itself
+        # since this constructor has no separate structure/bounds to compute it from.
+        # Scoped to this branch only — :∫ρdz/:∫ρz²dz are smooth even-in-|ω̄| scalar
+        # kernels with no i·ω weighting, not targets for this filter.
+        ω̄_max = minimum(maximum(abs, selectdim(ω, nd+1, dim)) for dim in 1:nd)
+        σ = sinc.(ω̄ ./ ω̄_max)
+        Ω .*= σ
         # @time for kk in CartesianIndices(ngrid)
         #     k = Tuple(kk)
         #     ω̄ = norm(@view(ω[k...,:]))

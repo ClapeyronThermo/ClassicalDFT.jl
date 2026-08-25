@@ -221,6 +221,83 @@ end
     end
 end
 
+# ── Diagnostics: mixture-level ξ, not otherwise exposed outside f_assoc ─────
+#
+# Plain (non-`@generated`, non-AD-traced) duplicate of the ξ_mix formula inlined in
+# both f_assoc methods below — kept as an independent copy rather than refactored into
+# a shared helper so it carries zero risk of touching the Enzyme-differentiated path.
+# For diagnostic use (e.g. `xi_profile`) only.
+function _xi_mix_at(n, kk, params, ::Val{NC}, ::Val{ND}) where {NC, ND}
+    F2  = 2; FV = 4
+    FP  = eltype(n)
+    _2π = FP(2π)
+    n2_mix = zero(FP); nv2sq_mix = zero(FP)
+    @inbounds for i in 1:NC
+        n2_mix += π * n[kk, F2, i] * params.m[i] * params.HSd[i]
+    end
+    if ND >= 1
+        nv2d = zero(FP)
+        @inbounds for i in 1:NC; nv2d -= _2π * n[kk, FV,   i] * params.m[i]; end
+        nv2sq_mix += nv2d * nv2d
+    end
+    if ND >= 2
+        nv2d = zero(FP)
+        @inbounds for i in 1:NC; nv2d -= _2π * n[kk, FV+1, i] * params.m[i]; end
+        nv2sq_mix += nv2d * nv2d
+    end
+    if ND >= 3
+        nv2d = zero(FP)
+        @inbounds for i in 1:NC; nv2d -= _2π * n[kk, FV+2, i] * params.m[i]; end
+        nv2sq_mix += nv2d * nv2d
+    end
+    return one(FP) - nv2sq_mix / (n2_mix * n2_mix)
+end
+
+"""
+    xi_profile(system::DFTSystem, ρ) -> (; xi_mix, xi_groups, assoc_group_idx)
+
+Compute the Rosenfeld/Wertheim FMT anisotropy factor `ξ = 1 - |n̄v2|²/n̄2²` at every
+grid point of a converged (or trial) density profile `ρ`, for diagnostic/plotting
+purposes. For the *true* continuous weighted densities `ξ ∈ [0,1]`; grid-discretization
+error can push it outside that range (most visibly near sharp density features), which
+is what this is for inspecting.
+
+Returns a named tuple:
+- `xi_mix`: `Vector`/`Array` of length `ngrid`, the single mixture-level ξ that feeds
+  every association pair's bonding strength Δ (the quantity used inside `_assoc_delta`).
+- `xi_groups`: `ngrid × NC` array, the per-field/per-group ξ (one column per bead type
+  in `system.model`, e.g. one column per SAFTγMie group) — the same quantity `f_assoc`
+  computes via `_assoc_xi` for each site-bearing group individually.
+- `assoc_group_idx`: the field/group indices (`1:NC`, matching `xi_groups`' columns)
+  that actually participate in at least one association pair — i.e. the columns of
+  `xi_groups` worth plotting, without having to know the model's group ordering.
+
+Errors if `system.model` has no association sites (`ξ` is only defined/used there).
+Read-only: does not mutate `ρ` or `system`, and does not touch the Enzyme-differentiated
+`f_res`/`f_assoc` code path at all (this recomputes ξ independently — see `_xi_mix_at`).
+"""
+function xi_profile(system::DFTSystem, ρ)
+    n, _, fft_buf, in_buf, out_buf, plan, iplan, params, _, _, nc, nd, _ = preallocate_model(system, ρ)
+    hasproperty(params, :has_assoc) && params.has_assoc || error(
+        "xi_profile: system.model has no association sites — ξ is not defined/used.")
+    assoc_group_idx = sort(unique(vcat(collect(params.assoc_icomp), collect(params.assoc_jcomp))))
+    evaluate_field!(system, ρ, fft_buf, in_buf, out_buf, plan, iplan)
+    copyto!(n, fft_buf)
+
+    ngrid = system.structure.ngrid
+    FP = eltype(n)
+    xi_mix    = allocate(system.options.device, FP, ngrid...)
+    xi_groups = allocate(system.options.device, FP, ngrid..., nc)
+    for kk in CartesianIndices(ngrid)
+        xi_mix[kk] = _xi_mix_at(n, kk, params, Val(nc), Val(nd))
+        xi_i = _assoc_xi(n, kk, params, Val(nc), Val(nd))
+        for i in 1:nc
+            xi_groups[kk, i] = xi_i[i]
+        end
+    end
+    return (; xi_mix, xi_groups, assoc_group_idx)
+end
+
 # NP explicit Δ evaluations; n3_mix/n2_mix/xi_mix passed as args to avoid boxing
 @generated function _assoc_delta_vals(n, params, T, kk, n3_mix, n2_mix, xi_mix,
                                        ::Val{NC}, ::Val{ND}, ::Val{NP}, ::Type{M}) where {NC, ND, NP, M}

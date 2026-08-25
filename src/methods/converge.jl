@@ -1,16 +1,17 @@
 #wrapper for the AASol constructor that uses the keyword arguments in converge!
 
-function __AASol(;maxit, beta, tol, anderson_start, anderson_m, verbose)
+function __AASol(;maxit, beta, tol, anderson_start, anderson_m, verbose, nan_max_retries, nan_beta_factor, omega_window, omega_rtol)
     return AASol(anderson_m;
             beta=beta, rtol=tol, atol=tol, maxit=maxit,
             picard_maxit=maxit, picard_beta=beta,
             picard_rtol=anderson_start, picard_atol=anderson_start,
-            verbose=verbose)
+            verbose=verbose, nan_max_retries=nan_max_retries, nan_beta_factor=nan_beta_factor,
+            omega_window=omega_window, omega_rtol=omega_rtol)
 end
 
 #dispatches for specific defaults
-AASol(system::Union{DFTSystem,DGTSystem,ElectrolyteDFTSystem};maxit=10000,beta=1e-2,tol=1e-4,anderson_start=1e-1,anderson_m=5,verbose=false,kwargs...) = __AASol(;maxit, beta, tol, anderson_start, anderson_m, verbose)
-AASol(system::SCFTSystem;maxit=5000,beta=1e-2,tol=1e-6,anderson_start=1e-2,anderson_m=5,verbose=false,kwargs...) = __AASol(;maxit, beta, tol, anderson_start, anderson_m, verbose)
+AASol(system::Union{DFTSystem,DGTSystem,ElectrolyteDFTSystem};maxit=10000,beta=1e-2,tol=1e-4,anderson_start=1e-1,anderson_m=5,verbose=false,nan_max_retries=5,nan_beta_factor=0.5,omega_window=0,omega_rtol=1e-6,kwargs...) = __AASol(;maxit, beta, tol, anderson_start, anderson_m, verbose, nan_max_retries, nan_beta_factor, omega_window, omega_rtol)
+AASol(system::SCFTSystem;maxit=5000,beta=1e-2,tol=1e-6,anderson_start=1e-2,anderson_m=5,verbose=false,nan_max_retries=5,nan_beta_factor=0.5,omega_window=0,omega_rtol=1e-6,kwargs...) = __AASol(;maxit, beta, tol, anderson_start, anderson_m, verbose, nan_max_retries, nan_beta_factor, omega_window, omega_rtol)
 
 
 """
@@ -181,6 +182,10 @@ If only keyword arguments are used, then the problem is solved via the Anderson 
 - `anderson_start::AbstractFloat`: Switch from Picard to Anderson once the residual norm drops below this (used as both `aasol`'s `picard_rtol` and `picard_atol`).
 - `anderson_m::Int`: Anderson history length (number of past iterates kept). The default of `0` recovers pure (damped) Picard iteration throughout — the historical default behavior. Set to a positive integer to enable real Anderson acceleration.
 - `verbose::Bool = false`: Print `aasol`'s per-iteration convergence summary, plus a final convergence/free-energy summary line.
+- `nan_max_retries::Int = 5`: If a Picard step's residual comes back NaN (e.g. from an extreme intermediate density), retry with a smaller step built from the previous accepted iterate, shrinking `beta` by `nan_beta_factor` each attempt, up to this many times, before giving up. Set to `0` to fail immediately on the first NaN instead of retrying. See [`aasol`](@ref) for why this must rebuild from the previous iterate rather than just remixing the same (already-NaN) step. A successful retry's shrunk `beta` persists for the rest of the Picard phase rather than resetting next iteration. Not applied during the Anderson phase — a NaN there is always an immediate failure.
+- `nan_beta_factor::Real = 0.5`: Shrink factor applied to the retry `beta` on each NaN-retry attempt.
+- `omega_window::Int = 0`: DFT-family systems only (`DFTSystem`/`DGTSystem`/`ElectrolyteDFTSystem`; not SCFT). If `> 0`, additionally track the grand potential ([`grand_potential`](@ref)) every iteration and stop early once it has stayed flat (within `omega_rtol`) for this many consecutive iterations — a noise-robust alternative to the raw field-residual norm, useful when the profile carries small-amplitude spatial noise that never fully vanishes and so keeps `resnorm` from dropping below `tol`. `0` (the default) disables this check entirely, leaving convergence behavior unchanged.
+- `omega_rtol::Real = 1e-6`: relative-change threshold (`(max-min)/|Ω|` over the window) below which the grand potential is considered flat. Only used when `omega_window > 0`.
 
 ## Default anderson values
 - `DFTSystem`           : `maxit = 10000,beta = 1e-2, tol = 1e-4,anderson_start = 1e-1, anderson_m = 5,verbose = false`
@@ -230,6 +235,9 @@ function converge!(prob::DFTProblem{S}, method::AASol, ρ::AbstractArray) where 
 
     iter_count = Ref(0)
     ρ_vec = @view ρ[:]
+    # Rolling window of grand-potential samples for the optional plateau gate below
+    # (disabled by default: method.omega_window == 0 skips this entirely).
+    omega_hist = Float64[]
     # aasol's fixed-point map: given the current log-density (flattened), advance one
     # DFT step and return the new log-density guess (flattened).
     function GFix!(ln_G, ln_x)
@@ -237,6 +245,35 @@ function converge!(prob::DFTProblem{S}, method::AASol, ρ::AbstractArray) where 
         #ρᵢ .= exp.(reshape(ln_x, (ngrid..., nbeads)))
         get_new_profile!(prob.system, ρ, δfδρ_res, caches)
         GFix_logger(prob,iter_count,ρ)
+        # Optional secondary convergence gate: the raw field-residual norm aasol uses
+        # can plateau above tol on spatial noise that never fully vanishes (see
+        # grand_potential's docstring, src/utils/base.jl). If the grand potential — a
+        # single integrated scalar, much less sensitive to that noise — has stayed flat
+        # for method.omega_window consecutive iterations, report ln_G := ln_x (the
+        # candidate unchanged) instead of the real update. aasol's own residual
+        # res = gx - sol is then exactly 0 for this call, which trivially satisfies its
+        # existing resnorm <= tol exit check (Picard-phase break, Anderson while-loop,
+        # AndersonOK) — this reuses that already-tested exit machinery verbatim rather
+        # than adding a new stopping path inside aasol itself. ρ has already been set to
+        # exp.(ln_x) above, so it stays consistent with the ln_x this override reports.
+        if method.omega_window > 0
+            Ω = grand_potential(prob.system, ρ)
+            push!(omega_hist, Ω)
+            length(omega_hist) > method.omega_window && popfirst!(omega_hist)
+            spread = length(omega_hist) >= 2 ? maximum(omega_hist) - minimum(omega_hist) : NaN
+            if method.verbose
+                _omega_verbose_line(iter_count[], Ω, spread, method.omega_rtol)
+            end
+            if length(omega_hist) == method.omega_window &&
+               spread <= method.omega_rtol * abs(omega_hist[end])
+                if method.verbose
+                    println("Grand potential plateaued over the last ", method.omega_window,
+                            " iterations (Δ/|Ω| ≤ ", method.omega_rtol, ") — stopping early.")
+                end
+                copyto!(ln_G, ln_x)
+                return ln_G
+            end
+        end
         copyto!(ln_G, vec(ln_Gx))
         return ln_G
     end
@@ -251,6 +288,23 @@ function converge!(prob::DFTProblem{S}, method::AASol, ρ::AbstractArray) where 
         msg = result.idid ? "DFT converged" : "DFT did not converge"
         @info "$msg after $(iter_count[]) iterations: err = $(round(err; sigdigits=3)) | F = $(round(H; sigdigits=6))"
     end
+end
+
+"""
+    _omega_verbose_line(k, Ω, spread, omega_rtol)
+
+Per-iteration verbose print for the optional grand-potential plateau gate, in the same
+style as `aasol`'s own `_aa_verbose_line` (`src/utils/anderson.jl`) — lets `Ω` be
+watched converge (or plateau) alongside `|res|` in the interleaved verbose output.
+`spread` is the rolling window's `maximum-minimum` (`NaN` until at least 2 samples have
+been collected); the gate fires once `spread <= omega_rtol*|Ω|` for a full window.
+"""
+function _omega_verbose_line(k::Int, Ω, spread, omega_rtol)
+    fmt(x) = lpad(string(round(x, sigdigits=4)), 11)
+    println(rpad("Omega", 10), "  k=", lpad(k, 3),
+            "  Ω=", fmt(Ω),
+            "  Δ=", fmt(spread),
+            "  rtol=", fmt(omega_rtol))
 end
 
 function GFix_logger(prob::DFTProblem{S}, iter_count, ρ) where S

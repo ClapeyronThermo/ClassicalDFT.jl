@@ -22,6 +22,40 @@ macro chain(component, args...)
 end
 
 """
+    grand_potential(system::AbstractcDFTSystem, ρ)
+
+Obtain the grand potential `Ω[ρ] = F[ρ] - Σᵢ μᵢ Nᵢ` of the system for a given profile,
+where `μᵢ` is species `i`'s fixed bulk chemical potential and `Nᵢ = ∫ρᵢ(r)dV` its total
+particle count in the domain. `μᵢ` is taken from `species.chempot_res .+
+log.(species.bulk_density)` — the same per-component chemical potential
+`get_new_profile!` (`src/methods/converge.jl`) already builds and drives the DFT
+fixed-point equation toward — so `Ω` is returned on the same (solver-internal) scale as
+`free_energy`, with no separate unit conversion needed.
+
+For this grand-canonical (μ-controlled) system, `δΩ/δρᵢ = 0` is exactly the stationarity
+condition the solver iterates toward, unlike `free_energy` alone, which also depends on
+profile degrees of freedom that don't change the actual thermodynamic driving force. `Ω`
+is therefore a natural candidate for a convergence check that is less sensitive to
+small-amplitude spatial noise in `ρ` than the raw field-residual norm `aasol` uses.
+"""
+function grand_potential(system::AbstractcDFTSystem, ρ)
+    model = system.model
+    species = system.species
+    nd = dimension(system)
+    F = free_energy(system, ρ)
+    μ = species.chempot_res .+ log.(species.bulk_density)
+    μN = zero(promote_type(eltype(ρ), eltype(μ)))
+    for i in @comps
+        Ni = zero(μN)
+        for k in @chain(i)
+            Ni += ∫(Adapt.adapt(CPU(), selectdim(ρ,nd+1,k)), system.structure)/species.nbeads[i]
+        end
+        μN += μ[i]*Ni
+    end
+    return F - μN
+end
+
+"""
     compute_levels(model)
 
 BFS tree depth ("level") for every bonded group/node in `model`, using

@@ -66,6 +66,26 @@ If `m = 0` (Picard) then `Vstore` must have at least 4 columns.
   Damping factor applied during the Picard warmup phase only.
   Independent of the Anderson `beta`. Changes `G(x)` to `(1- picard_beta)*x + picard_beta*G(x)` during warmup.
 
+- `nan_max_retries`: default = `5`
+  If a Picard step's `G(x)` contains a NaN, retry with a smaller step built from the
+  *previous* accepted iterate (mixing can never rescue an existing NaN — see below),
+  shrinking the retry `beta` by `nan_beta_factor` each attempt, up to this many times.
+  Each retry costs one additional `G` evaluation. If exhausted with no finite result
+  (or if the very first iterate's `G(x0)` is already NaN, with nothing to back up to),
+  the whole solve aborts immediately with `errcode = -3` rather than continuing to burn
+  iterations or Anderson-phase attempts on a poisoned state. Set to `0` to disable
+  retries and fail immediately on the first NaN (still with the clear `-3` errcode).
+  A successful retry's shrunk `beta` *persists* for the rest of the Picard phase (it
+  isn't reset back to `picard_beta` on the next iteration) — the instability that
+  triggered it may still be nearby, so subsequent steps keep stepping cautiously rather
+  than immediately retrying at full beta. Not applied during the Anderson phase (its
+  QR/history bookkeeping isn't safe to rewind mid-phase) — a NaN there is always an
+  immediate `-3` failure.
+
+- `nan_beta_factor`: default = `0.5`
+  Multiplicative shrink factor applied to the retry `beta` on each NaN-retry attempt
+  (see `nan_max_retries`).
+
 - `verbose`: default = `false`
   Print a one-line summary for every iteration to stdout. 
   Each line shows the phase (Picard warmup or Anderson), the iteration counter, the current residual norm, and the running atol and rtol tolerances.
@@ -100,6 +120,7 @@ If `m = 0` (Picard) then `Vstore` must have at least 4 columns.
   = 0  if the iteration succeeded
   = -1 if the initial iterate satisfies the termination criteria
   = -2 if ||residual|| > 1e4 * ||residual_0|| (divergence guard)
+  = -3 if a NaN was detected in the residual (Picard retries, if any, exhausted)
   = 10 if no convergence after maxit iterations
 
 - `solhist`: This is the entire history of the iteration if `keepsolhist = true`.
@@ -204,6 +225,10 @@ struct AASol{T,P,V<:AbstractArray{T,2}}
     picard_rtol::T
     picard_atol::T
     verbose::Bool
+    nan_max_retries::Int
+    nan_beta_factor::T
+    omega_window::Int
+    omega_rtol::T
 end
 
 """
@@ -229,9 +254,14 @@ function AASol(m::Int, Vstore::AbstractArray{T,2};
                picard_beta::Real = 1.0,
                picard_rtol::Real = 1e-2,
                picard_atol::Real = 1e-2,
-               verbose::Bool = false) where {T}
+               verbose::Bool = false,
+               nan_max_retries::Int = 5,
+               nan_beta_factor::Real = 0.5,
+               omega_window::Int = 0,
+               omega_rtol::Real = 1e-6) where {T}
 
     @assert m >= 0
+    @assert omega_window >= 0
     T_conv = T
     rtolT      = convert(T_conv, rtol)
     atolT      = convert(T_conv, atol)
@@ -239,10 +269,13 @@ function AASol(m::Int, Vstore::AbstractArray{T,2};
     picard_betaT    = convert(T_conv, picard_beta)
     picard_rtolT    = convert(T_conv, picard_rtol)
     picard_atolT    = convert(T_conv, picard_atol)
+    nan_beta_factorT = convert(T_conv, nan_beta_factor)
+    omega_rtolT      = convert(T_conv, omega_rtol)
     P = typeof(pdata)
     V = typeof(Vstore)
     return AASol{T,P,V}(m, Vstore, maxit, rtolT, atolT, betaT, pdata, keepsolhist,
-                        picard_maxit, picard_betaT, picard_rtolT, picard_atolT, verbose)
+                        picard_maxit, picard_betaT, picard_rtolT, picard_atolT, verbose,
+                        nan_max_retries, nan_beta_factorT, omega_window, omega_rtolT)
 end
 
 function AASol(x0::AbstractArray{T}, method::AASol) where {T}
@@ -257,7 +290,11 @@ function AASol(x0::AbstractArray{T}, method::AASol) where {T}
         picard_beta=method.picard_beta,
         picard_rtol=method.picard_rtol,
         picard_atol=method.picard_atol,
-        verbose=method.verbose)
+        verbose=method.verbose,
+        nan_max_retries=method.nan_max_retries,
+        nan_beta_factor=method.nan_beta_factor,
+        omega_window=method.omega_window,
+        omega_rtol=method.omega_rtol)
 end
 
 function AASol(x0::AbstractArray{T}, m::Int = 5; kwargs...) where {T}
@@ -290,8 +327,10 @@ function aasol(
     picard_rtol  = 1e-2,
     picard_atol  = 1e-2,
     verbose      = false,
+    nan_max_retries = 5,
+    nan_beta_factor = 0.5,
 )
-    method = AASol(m,Vstore;maxit,rtol,atol,beta,pdata,keepsolhist,picard_maxit,picard_beta,picard_rtol,picard_atol,verbose)
+    method = AASol(m,Vstore;maxit,rtol,atol,beta,pdata,keepsolhist,picard_maxit,picard_beta,picard_rtol,picard_atol,verbose,nan_max_retries,nan_beta_factor)
     return aasol(GFix!, x0, method)
 
 end
@@ -313,6 +352,9 @@ function aasol(GFix!, x0, method::AASol{T,P,V}) where {T,P,V}
     picard_rtol    = method.picard_rtol
     picard_atol    = method.picard_atol
     verbose        = method.verbose
+    nan_max_retries = method.nan_max_retries
+    nan_beta_factor = method.nan_beta_factor
+    picard_beta_orig = picard_beta   # kept to detect/measure any NaN-retry shrinkage below
 
     #
     # Startup
@@ -325,6 +367,17 @@ function aasol(GFix!, x0, method::AASol{T,P,V}) where {T,P,V}
     k = 0
     ~keepsolhist || (@views solhist[:, k+1] .= sol)
     gx = EvalF!(GFix!, gx, sol, pdata)
+    if any(isnan, gx)
+        verbose && println("NaN detected in residual at the initial iterate — aborting.")
+        ItData = ItStatsA(eltype(gx)(NaN))
+        return CloseIteration(sol, gx, ItData, false, -3, keepsolhist, solhist)
+    end
+    # Cache x0 and the raw (unmixed) G(x0) into dg/df (otherwise unused until the
+    # Anderson phase, which fully overwrites them on first use — see aa_point!) so
+    # the Picard phase's very first iteration has real lookback state to retry from,
+    # not just iterations 2+.
+    copy!(dg, sol)
+    copy!(df, gx)
     (beta == 1) || (gx = betafix!(gx, sol, beta))
     copy!(res, gx)
     axpy!(-1, sol, res)
@@ -346,8 +399,62 @@ function aasol(GFix!, x0, method::AASol{T,P,V}) where {T,P,V}
         # The first G(x0) was already evaluated above; accept that step
         # and then run picard_maxit - 1 further Picard steps.
         copy!(sol, gx)
+        # Lookback state for NaN retries: the previous accepted iterate (`dg`) and the
+        # RAW (unmixed) G() value that produced it (`df`) — both otherwise unused during
+        # the Picard phase (they're Anderson-only buffers), reused here to avoid extra
+        # allocation. Mixing (betafix!) is exact linear interpolation: if the raw G(sol)
+        # itself contains a NaN entry, no β > 0 can rescue it (β·NaN = NaN regardless of
+        # magnitude), so retrying must instead rebuild a smaller step from the *previous*
+        # known-good state and re-evaluate G() fresh there — not just remix the same
+        # already-poisoned value. `dg`/`df` already hold (x0, raw G(x0)) from the
+        # initial evaluation above, so lookback is available from the very first
+        # iteration of this loop, not just iterations 2+.
+        have_lookback = true
         for _ in 1:picard_maxit - 1
             gx = EvalF!(GFix!, gx, sol, pdata)
+
+            if any(isnan, gx)
+                recovered = false
+                if have_lookback
+                    current_beta = picard_beta
+                    attempt = 0
+                    while attempt < nan_max_retries
+                        attempt += 1
+                        current_beta *= nan_beta_factor
+                        if verbose
+                            println("NaN at Picard k=", k + 1, " — retrying with beta=",
+                                    round(current_beta, sigdigits=4))
+                        end
+                        copy!(res, df)                        # res <- cached raw G(sol_prev)
+                        res = betafix!(res, dg, current_beta)  # res <- mix(sol_prev, gx_raw_prev, β')
+                        gx  = EvalF!(GFix!, gx, res, pdata)    # gx  <- G(candidate), fresh check
+                        if !any(isnan, gx)
+                            copy!(sol, res)   # accept the smaller-step candidate
+                            picard_beta = current_beta   # persist the shrunk beta going forward —
+                                                          # the instability that caused this NaN may
+                                                          # still be nearby, so keep stepping cautiously
+                                                          # instead of immediately retrying at full beta
+                            recovered = true
+                            break
+                        end
+                    end
+                end
+                if !recovered
+                    verbose && println("NaN persists after ",
+                        have_lookback ? nan_max_retries : 0, " retries at Picard k=",
+                        k + 1, " — aborting.")
+                    updateHist!(ItData, eltype(gx)(NaN))
+                    return CloseIteration(sol, gx, ItData, false, -3, keepsolhist, solhist)
+                end
+                # `sol`/`gx` now hold the recovered candidate and its fresh raw G() value —
+                # fall through into the normal mixing path below exactly as if this
+                # iteration's G(sol) had been clean from the start.
+            end
+
+            copy!(dg, sol)   # cache this iterate...
+            copy!(df, gx)    # ...and its raw G() value, as lookback for the next iteration
+            have_lookback = true
+
             (picard_beta == 1) || (gx = betafix!(gx, sol, picard_beta))
             copy!(res, gx)
             axpy!(-1, sol, res)
@@ -361,6 +468,21 @@ function aasol(GFix!, x0, method::AASol{T,P,V}) where {T,P,V}
             copy!(sol, gx)
         end
         toosoon = (resnorm <= tol)
+
+        # If NaN retries shrank picard_beta below its original value, the region just
+        # traversed is evidently fragile — carry that caution into the Anderson phase by
+        # scaling its beta down by the same factor, rather than jumping back to the
+        # original (possibly-too-aggressive) beta right after the Picard phase steadied
+        # things. A no-op (scale = 1) if no retry ever fired.
+        if picard_beta < picard_beta_orig
+            scale = picard_beta / picard_beta_orig
+            if verbose
+                println("Picard damping was reduced during NaN retries (", picard_beta,
+                        " / ", picard_beta_orig, ") — scaling Anderson beta from ", beta,
+                        " to ", beta * scale)
+            end
+            beta *= scale
+        end
     end
 
     # ----------------------------------------------------------------
@@ -434,6 +556,8 @@ function aasol(GFix!, x0, method::AASol{T,P,V}) where {T,P,V}
                 println("Converged after ", k, " iterations.")
         elseif errcode == -2
             println("Divergence detected at iteration ", k, ": |res| exceeded upper bound.")
+        elseif errcode == -3
+            println("NaN detected in residual at iteration ", k, " — aborting.")
         else
             println("No convergence after ", k, " iterations.")
         end
@@ -721,12 +845,20 @@ a human-readable summary printed automatically).
 errcode meanings:
   -1  initial iterate already satisfied tolerance (toosoon)
   -2  divergence detected (resnorm >= resnorm_up_bd)
+  -3  NaN detected in residual
    0  converged successfully
   10  maxit reached without convergence
 """
 function AndersonOK(resnorm, tol, k, m, toosoon, resnorm_up_bd)
     if toosoon
         return (true, -1)
+    elseif isnan(resnorm)
+        # NaN compares false to every threshold below, so without this explicit check
+        # a NaN residual would silently fall into the generic "no convergence" bucket
+        # (or, for `resnorm_up_bd`, never trigger the divergence check at all) — this
+        # is what actually stops the Anderson while-loop early on a NaN today, just
+        # misreported. Making it explicit gives a distinct, honest errcode instead.
+        return (false, -3)
     elseif resnorm >= resnorm_up_bd
         return (false, -2)
     elseif resnorm <= tol

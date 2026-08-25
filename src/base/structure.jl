@@ -171,13 +171,22 @@ Return the number of grid points for the given dimension `dim` of the structure.
 ngrid(structure::DFTStructure,dim = 1) =  structure.ngrid[dim]
 
 """
-    uniform_range(structure::DFTStructure, dim::Int = 1) -> LinRange
+    uniform_range(structure::DFTStructure, dim::Int = 1) -> AbstractRange
 
-Return a linearly spaced range covering the bounds of the given dimension, using the number of grid points stored in the structure.
+Return the `N` grid coordinates covering the bounds of the given dimension, using the
+number of grid points stored in the structure. Uses the standard **half-open** FFT
+convention (`N` samples spanning a period of exactly `ub-lb`, spacing `Δ=(ub-lb)/N`,
+matching `structure_fftfreq`/`fftfreq(N, N/(ub-lb))` and `structure_dz`'s own
+`(ub-lb)/ngrid`) — *not* `LinRange(lb,ub,N)`, which would put a spacing of
+`(ub-lb)/(N-1)` and duplicate the periodic-image point at `ub` (`fftfreq`/FFTW's DFT
+definition assumes `N` samples span `N*Δ` exactly, with no redundant endpoint — see
+`numpy.fft.fftfreq`'s docs, which use the same underlying DFT convention as FFTW).
 """
 function uniform_range(structure::DFTStructure,dim::Int)
     lb,ub = bounds(structure,dim)
-    return LinRange(lb,ub,ngrid(structure,dim))
+    N = ngrid(structure,dim)
+    Δ = (ub-lb)/N
+    return range(lb, step=Δ, length=N)
 end
 
 #= utils =#
