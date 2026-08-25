@@ -22,7 +22,7 @@ using Clapeyron: d, N_A, k_B, R̄, e_c, ϵ_0
 using Clapeyron: @comps, @groups
 using Clapeyron: Solvers, log, sqrt, log1p, PackedVofV, sparse, SparseMatrixCSC
 using Clapeyron: assoc_similar, assoc_matrix_solve, assoc_options, assoc_pair_length
-using Clapeyron: issite, compute_index, complement_index, indices, diagvalues
+using Clapeyron: indices, diagvalues
 import Clapeyron.Solvers
 import Clapeyron: ElectrolyteModel
 using Clapeyron: SingleComp, PeTSModel, epsilon_LorentzBerthelot!

@@ -249,8 +249,7 @@ function expand_params(params::PARAM, groups, sites, ngroups_k) where PARAM
                 end
                 for i in 1:n_interaction
                     value = param.values.values[i]                    
-                    id_species_1, id_species_2 = param.values.outer_indices[i]
-                    id_site_1, id_site_2 = param.values.inner_indices[i]
+                    id_species_1, id_species_2, id_site_1, id_site_2 = Clapeyron.idx_to_ijab(param.values, i)
                     group_type_1,site_type_1 = split(param.sites[id_species_1][id_site_1],"/")
                     group_type_2,site_type_2 = split(param.sites[id_species_2][id_site_2],"/")
 

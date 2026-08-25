@@ -51,7 +51,10 @@ function preallocate_params(system::DFTSystem{<:pharmaPCSAFTModel})
     nn = Clapeyron.assoc_pair_length(model)
     if nn > 0
         eps_vals = model.params.epsilon_assoc.values
-        sig3_eff = [sigma_eff[eps_vals.outer_indices[idx]...]^3
+        sig3_eff = [begin
+                        i, j, _, _ = Clapeyron.idx_to_ijab(eps_vals, idx)
+                        sigma_eff[i, j]^3
+                    end
                     for idx in 1:length(eps_vals.values)]
         return merge(params_base, (;
             sigma      = adapt_to_device(backend, FP, sigma_eff),
