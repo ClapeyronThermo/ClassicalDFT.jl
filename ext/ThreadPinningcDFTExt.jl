@@ -1,9 +1,9 @@
 module ThreadPinningcDFTExt
 
-using cDFT
+using ClassicalDFT
 using ThreadPinning
 
-function cDFT.CPU(ncpu::Int,device_ids::Vector{Int}) 
+function ClassicalDFT.CPU(ncpu::Int,device_ids::Vector{Int}) 
     ThreadPinning.pinthreads(device_ids)
     return CPU(ncpu,true,device_ids)
 end

@@ -1,49 +1,49 @@
 module PlotscDFTExt
 
-using cDFT
+using ClassicalDFT
 using Plots
 import Plots: Colors
 
-_maybe_texlabel(s, latex::Bool) = latex ? cDFT.texlabel(s) : s
+_maybe_texlabel(s, latex::Bool) = latex ? ClassicalDFT.texlabel(s) : s
 
 # Figure-level style kwargs shared by every `Plots.plot` method below, ported 1:1 from the
-# house rcParams style (see cDFT.CDFT_* constants in src/utils/plot_style.jl): pixel size
+# house rcParams style (see ClassicalDFT.CDFT_* constants in src/utils/plot_style.jl): pixel size
 # (from `width ∈ (:single,:double)` at `dpi`), white background, tick/label/legend font
 # sizes, font family (`font` overrides the latex-conditional default when given), a
-# categorical color cycle (`color_scheme`, default cDFT.CDFT_DEFAULT_COLORS), and grid
+# categorical color cycle (`color_scheme`, default ClassicalDFT.CDFT_DEFAULT_COLORS), and grid
 # on/off (`grid`, default `false` -- unchanged current look, but now overridable; when
-# `true`, uses cDFT.CDFT_GRID_COLOR/CDFT_GRID_LINESTYLE).
+# `true`, uses ClassicalDFT.CDFT_GRID_COLOR/CDFT_GRID_LINESTYLE).
 function _cdft_base_plot(latex::Bool, font, width::Symbol, dpi::Real, grid::Bool, color_scheme)
     return Plots.plot(
-        size = cDFT.cdft_figure_size(width, dpi),
+        size = ClassicalDFT.cdft_figure_size(width, dpi),
         dpi = dpi,
         background_color = :white,
         color_palette = Plots.palette(color_scheme),
         grid = grid ? :on : :off,
-        gridcolor = cDFT.CDFT_GRID_COLOR,
-        gridstyle = grid ? Symbol(cDFT.CDFT_GRID_LINESTYLE == "-" ? :solid : :dash) : :solid,
+        gridcolor = ClassicalDFT.CDFT_GRID_COLOR,
+        gridstyle = grid ? Symbol(ClassicalDFT.CDFT_GRID_LINESTYLE == "-" ? :solid : :dash) : :solid,
         framestyle=:box,
         foreground_color_legend = nothing,
-        xtickfontsize=cDFT.CDFT_TICK_LABELSIZE,
-        ytickfontsize=cDFT.CDFT_TICK_LABELSIZE,
-        xlabelfontsize=cDFT.CDFT_AXES_LABELSIZE,
-        ylabelfontsize=cDFT.CDFT_AXES_LABELSIZE,
+        xtickfontsize=ClassicalDFT.CDFT_TICK_LABELSIZE,
+        ytickfontsize=ClassicalDFT.CDFT_TICK_LABELSIZE,
+        xlabelfontsize=ClassicalDFT.CDFT_AXES_LABELSIZE,
+        ylabelfontsize=ClassicalDFT.CDFT_AXES_LABELSIZE,
         # NOTE: must call `Plots.font` fully-qualified here, not the bare `font` that
         # `using Plots` would normally bring into scope -- this function's own `font`
         # parameter (the font-family override, a String or `nothing`) shadows it.
-        legend_font=Plots.font(cDFT.CDFT_LEGEND_FONTSIZE),
+        legend_font=Plots.font(ClassicalDFT.CDFT_LEGEND_FONTSIZE),
         fontfamily = font !== nothing ? font : (latex ? "Computer Modern" : :default),
     )
 end
 
-function Plots.plot(system::cDFT.AbstractcDFTSystem, profiles; x_units=:normalized, y_units=:normalized, latex=false, color_scheme=cDFT.CDFT_DEFAULT_COLORS, font=nothing, width=:single, dpi=cDFT.CDFT_DPI, grid=false)
+function Plots.plot(system::ClassicalDFT.AbstractcDFTSystem, profiles; x_units=:normalized, y_units=:normalized, latex=false, color_scheme=ClassicalDFT.CDFT_DEFAULT_COLORS, font=nothing, width=:single, dpi=ClassicalDFT.CDFT_DPI, grid=false)
     return Plots.plot(system, system.structure, profiles; x_units=x_units, y_units=y_units, latex=latex, color_scheme=color_scheme, font=font, width=width, dpi=dpi, grid=grid)
 end
 
-function Plots.plot(system::cDFT.AbstractcDFTSystem, structure::cDFT.DFTStructure1DCart, profiles; x_units=:normalized, y_units=:mass, latex=false, color_scheme=cDFT.CDFT_DEFAULT_COLORS, font=nothing, width=:single, dpi=cDFT.CDFT_DPI, grid=false)
+function Plots.plot(system::ClassicalDFT.AbstractcDFTSystem, structure::ClassicalDFT.DFTStructure1DCart, profiles; x_units=:normalized, y_units=:mass, latex=false, color_scheme=ClassicalDFT.CDFT_DEFAULT_COLORS, font=nothing, width=:single, dpi=ClassicalDFT.CDFT_DPI, grid=false)
     structure = system.structure
     model = system.model
-    if model isa cDFT.ElectrolyteModel
+    if model isa ClassicalDFT.ElectrolyteModel
         model = model.neutralmodel
     end
     species = system.species
@@ -51,25 +51,25 @@ function Plots.plot(system::cDFT.AbstractcDFTSystem, structure::cDFT.DFTStructur
 
     bounds = structure.bounds
 
-    z = cDFT.uniform_range(structure, 1)
-    L = cDFT.length_scale(model)
+    z = ClassicalDFT.uniform_range(structure, 1)
+    L = ClassicalDFT.length_scale(model)
 
     plt = _cdft_base_plot(latex, font, width, dpi, grid, color_scheme)
 
     ymax = 0.
     species_id = 1
     bead_id = 1
-    for i in cDFT.@comps
-        for k in cDFT.@chain(i)
+    for i in ClassicalDFT.@comps
+        for k in ClassicalDFT.@chain(i)
             if species.nbeads[i] > 1
                 species_name = model.components[i]
                 group_name = model.groups.flattenedgroups[k]
                 name = "$species_name $group_name"
-                norm_const = model.params.segment[k]*species.size[k]^3*cDFT.N_A
+                norm_const = model.params.segment[k]*species.size[k]^3*ClassicalDFT.N_A
             else
                 species_name = model.components[i]
                 name = "$species_name"
-                norm_const = model.params.segment[i]*species.size[i]^3*cDFT.N_A
+                norm_const = model.params.segment[i]*species.size[i]^3*ClassicalDFT.N_A
             end
 
             if x_units == :normalized
@@ -90,7 +90,7 @@ function Plots.plot(system::cDFT.AbstractcDFTSystem, structure::cDFT.DFTStructur
                 Y = profiles[:,k].*Mw/1e3
                 y_norm = " / (kg/m³)"
             elseif y_units == :angstrom
-                Y = profiles[:,k].*cDFT.N_A/1e30
+                Y = profiles[:,k].*ClassicalDFT.N_A/1e30
                 y_norm = " / (kg/m³)"
             else
                 Y = profiles[:,k]
@@ -133,10 +133,10 @@ function Plots.plot(system::cDFT.AbstractcDFTSystem, structure::cDFT.DFTStructur
     return plt
 end
 
-function Plots.plot(system::cDFT.AbstractcDFTSystem, structure::Union{cDFT.DFTStructure1DSphr,cDFT.DFTStructure1DCyl}, profiles; x_units=:normalized, y_units=:mass, latex=false, color_scheme=cDFT.CDFT_DEFAULT_COLORS, font=nothing, width=:single, dpi=cDFT.CDFT_DPI, grid=false)
+function Plots.plot(system::ClassicalDFT.AbstractcDFTSystem, structure::Union{ClassicalDFT.DFTStructure1DSphr,ClassicalDFT.DFTStructure1DCyl}, profiles; x_units=:normalized, y_units=:mass, latex=false, color_scheme=ClassicalDFT.CDFT_DEFAULT_COLORS, font=nothing, width=:single, dpi=ClassicalDFT.CDFT_DPI, grid=false)
     structure = system.structure
     model = system.model
-    if model isa cDFT.ElectrolyteModel
+    if model isa ClassicalDFT.ElectrolyteModel
         model = model.neutralmodel
     end
     species = system.species
@@ -144,23 +144,23 @@ function Plots.plot(system::cDFT.AbstractcDFTSystem, structure::Union{cDFT.DFTSt
 
     bounds = structure.bounds
 
-    z = cDFT.structure_r(structure)
-    L = cDFT.length_scale(model)
+    z = ClassicalDFT.structure_r(structure)
+    L = ClassicalDFT.length_scale(model)
 
     plt = _cdft_base_plot(latex, font, width, dpi, grid, color_scheme)
 
     ymax = 0.
-    for i in cDFT.@comps
-        for k in cDFT.@chain(i)
+    for i in ClassicalDFT.@comps
+        for k in ClassicalDFT.@chain(i)
             if species.nbeads[i] > 1
                 species_name = model.components[i]
                 group_name = model.groups.flattenedgroups[k]
                 name = "$species_name $group_name"
-                norm_const = model.params.segment[k]*species.size[k]^3*cDFT.N_A
+                norm_const = model.params.segment[k]*species.size[k]^3*ClassicalDFT.N_A
             else
                 species_name = model.components[i]
                 name = "$species_name"
-                norm_const = model.params.segment[i]*species.size[i]^3*cDFT.N_A
+                norm_const = model.params.segment[i]*species.size[i]^3*ClassicalDFT.N_A
             end
 
             if x_units == :normalized
@@ -181,7 +181,7 @@ function Plots.plot(system::cDFT.AbstractcDFTSystem, structure::Union{cDFT.DFTSt
                 Y = profiles[:,k].*Mw/1e3
                 y_norm = " / (kg/m³)"
             elseif y_units == :angstrom
-                Y = profiles[:,k].*cDFT.N_A/1e30
+                Y = profiles[:,k].*ClassicalDFT.N_A/1e30
                 y_norm = " / (kg/m³)"
             else
                 Y = profiles[:,k]
@@ -223,7 +223,7 @@ function Plots.plot(system::cDFT.AbstractcDFTSystem, structure::Union{cDFT.DFTSt
     return plt
 end
 
-function Plots.plot(system::Union{cDFT.DFTSystem,cDFT.DGTSystem}, structure::cDFT.DFTStructure2DCart, profiles; x_units=:normalized, y_units=:normalized, latex=false, color_scheme=cDFT.CDFT_DEFAULT_COLORS, font=nothing, width=:single, dpi=cDFT.CDFT_DPI, grid=false)
+function Plots.plot(system::Union{ClassicalDFT.DFTSystem,ClassicalDFT.DGTSystem}, structure::ClassicalDFT.DFTStructure2DCart, profiles; x_units=:normalized, y_units=:normalized, latex=false, color_scheme=ClassicalDFT.CDFT_DEFAULT_COLORS, font=nothing, width=:single, dpi=ClassicalDFT.CDFT_DPI, grid=false)
     # Per-species base colors for the heatmap alpha-gradients below (a *categorical*
     # color-per-species assignment, distinct from `color_palette` used for line plots
     # elsewhere in this file) -- was hardcoded to `palette(:tab10)`, now driven by the same
@@ -237,8 +237,8 @@ function Plots.plot(system::Union{cDFT.DFTSystem,cDFT.DGTSystem}, structure::cDF
 
     bounds = structure.bounds
 
-    x = cDFT.uniform_range(structure,1)
-    y = cDFT.uniform_range(structure,2)
+    x = ClassicalDFT.uniform_range(structure,1)
+    y = ClassicalDFT.uniform_range(structure,2)
     X = zeros(length(x),length(y))
     Y = zeros(length(x),length(y))
 
@@ -250,24 +250,24 @@ function Plots.plot(system::Union{cDFT.DFTSystem,cDFT.DGTSystem}, structure::cDF
         Y[:,i] .= y[i]
     end
 
-    L = cDFT.length_scale(model)
+    L = ClassicalDFT.length_scale(model)
 
     plt = _cdft_base_plot(latex, font, width, dpi, grid, color_scheme)
 
     ymax = 0.
     species_id = 1
     bead_id = 1
-    for i in cDFT.@comps
-        for k in cDFT.@chain(i)
+    for i in ClassicalDFT.@comps
+        for k in ClassicalDFT.@chain(i)
             if species.nbeads[i] > 1
                 species_name = model.components[i]
                 group_name = model.groups.flattenedgroups[k]
                 name = "$species_name $group_name"
-                norm_const = model.params.segment[k]*species.size[k]^3*cDFT.N_A
+                norm_const = model.params.segment[k]*species.size[k]^3*ClassicalDFT.N_A
             else
                 species_name = model.components[i]
                 name = "$species_name"
-                norm_const = model.params.segment[i]*species.size[i]^3*cDFT.N_A
+                norm_const = model.params.segment[i]*species.size[i]^3*ClassicalDFT.N_A
             end
 
             if x_units == :normalized
@@ -301,7 +301,7 @@ function Plots.plot(system::Union{cDFT.DFTSystem,cDFT.DGTSystem}, structure::cDF
             #     Y = profiles[:,k].*Mw/1e3
             #     y_norm = " / (kg/m³)"
             # elseif y_units == :angstrom
-            #     Y = profiles[:,k].*cDFT.N_A/1e30
+            #     Y = profiles[:,k].*ClassicalDFT.N_A/1e30
             #     y_norm = " / (kg/m³)"
             # else
             #     Y = profiles[:,k]

@@ -1,12 +1,12 @@
 module PlotlyJScDFTExt
-using cDFT
+using ClassicalDFT
 using PlotlyJS
 
-function PlotlyJS.plot(system::cDFT.DFTSystem, profiles; x_units=:normalized, y_units=:normalized)
+function PlotlyJS.plot(system::ClassicalDFT.DFTSystem, profiles; x_units=:normalized, y_units=:normalized)
     return PlotlyJS.plot(system, system.structure, profiles; x_units=x_units, y_units=y_units)
 end
 
-function PlotlyJS.plot(system::cDFT.DFTSystem, structure::cDFT.DFTStructure1DCart, profiles; x_units = :normalized, y_units = :normalized)
+function PlotlyJS.plot(system::ClassicalDFT.DFTSystem, structure::ClassicalDFT.DFTStructure1DCart, profiles; x_units = :normalized, y_units = :normalized)
 
     model = system.model
     species = system.species
@@ -14,8 +14,8 @@ function PlotlyJS.plot(system::cDFT.DFTSystem, structure::cDFT.DFTStructure1DCar
 
     bounds = structure.bounds
 
-    z = cDFT.uniform_range(structure, 1)
-    L = cDFT.length_scale(model)
+    z = ClassicalDFT.uniform_range(structure, 1)
+    L = ClassicalDFT.length_scale(model)
 
     colors = ["rgb(31, 119, 180, 1)",
               "rgb(255, 127, 14, 1)",
@@ -39,14 +39,14 @@ function PlotlyJS.plot(system::cDFT.DFTSystem, structure::cDFT.DFTStructure1DCar
     trace = PlotlyJS.GenericTrace[]
 
     ymax = 0.
-    for i in cDFT.@comps
-        for k in cDFT.@chain(i)
+    for i in ClassicalDFT.@comps
+        for k in ClassicalDFT.@chain(i)
 
             if species.nbeads[i] > 1
                 species_name = model.components[i]
                 group_name = model.groups.flattenedgroups[k]
                 name = "$species_name $group_name"
-                norm_const = model.params.segment[k]*species.size[k]^3*cDFT.N_A
+                norm_const = model.params.segment[k]*species.size[k]^3*ClassicalDFT.N_A
                 level = (1.5-((system.species.levels[k]-1)/maximum(system.species.levels)))/1.5
                 # find the ith color in the color scheme 
                 color = colors[i]
@@ -59,7 +59,7 @@ function PlotlyJS.plot(system::cDFT.DFTSystem, structure::cDFT.DFTStructure1DCar
             else
                 species_name = model.components[i]
                 name = "$species_name"
-                norm_const = model.params.segment[i]*species.size[i]^3*cDFT.N_A
+                norm_const = model.params.segment[i]*species.size[i]^3*ClassicalDFT.N_A
 
                 color = colors[i]
             end
@@ -82,7 +82,7 @@ function PlotlyJS.plot(system::cDFT.DFTSystem, structure::cDFT.DFTStructure1DCar
                 Y = profiles[:,k].*Mw/1e3
                 y_norm = " / (kg/m³)"
             elseif y_units == :angstrom
-                Y = profiles[:,k].*cDFT.N_A/1e30
+                Y = profiles[:,k].*ClassicalDFT.N_A/1e30
                 y_norm = " / (kg/m³)"
             else
                 Y = profiles[:,k]
@@ -125,7 +125,7 @@ function PlotlyJS.plot(system::cDFT.DFTSystem, structure::cDFT.DFTStructure1DCar
     return plt
 end
 
-function PlotlyJS.plot(system::cDFT.DFTSystem, structure::cDFT.DFTStructure2DCart, profiles; x_units = :normalized, y_units = :normalized)
+function PlotlyJS.plot(system::ClassicalDFT.DFTSystem, structure::ClassicalDFT.DFTStructure2DCart, profiles; x_units = :normalized, y_units = :normalized)
 
     colors = ["rgba(31, 119, 180, 1)",
               "rgba(255, 127, 14, 1)",
@@ -143,10 +143,10 @@ function PlotlyJS.plot(system::cDFT.DFTSystem, structure::cDFT.DFTStructure2DCar
     nb = length(profiles)
     bounds = structure.bounds
 
-    x = cDFT.uniform_range(structure,1)
-    y = cDFT.uniform_range(structure,2)
+    x = ClassicalDFT.uniform_range(structure,1)
+    y = ClassicalDFT.uniform_range(structure,2)
 
-    L = cDFT.length_scale(model)
+    L = ClassicalDFT.length_scale(model)
 
     layout = PlotlyJS.Layout(autosize=false,width=700,height=470,
              xaxis = PlotlyJS.attr(font_size=12, showgrid=false,            
@@ -157,17 +157,17 @@ function PlotlyJS.plot(system::cDFT.DFTSystem, structure::cDFT.DFTStructure2DCar
 
     trace = PlotlyJS.GenericTrace[]
 
-    for i in cDFT.@comps
-        for k in cDFT.@chain(i)
+    for i in ClassicalDFT.@comps
+        for k in ClassicalDFT.@chain(i)
             if species.nbeads[i] > 1
                 species_name = model.components[i]
                 group_name = model.groups.flattenedgroups[k]
                 name = "$species_name $group_name"
-                norm_const = model.params.segment[k]*species.size[k]^3*cDFT.N_A
+                norm_const = model.params.segment[k]*species.size[k]^3*ClassicalDFT.N_A
             else
                 species_name = model.components[i]
                 name = "$species_name"
-                norm_const = model.params.segment[i]*species.size[i]^3*cDFT.N_A
+                norm_const = model.params.segment[i]*species.size[i]^3*ClassicalDFT.N_A
             end
 
             if x_units == :normalized
@@ -200,7 +200,7 @@ function PlotlyJS.plot(system::cDFT.DFTSystem, structure::cDFT.DFTStructure2DCar
             #     Y = profiles[:,k].*Mw/1e3
             #     y_norm = " / (kg/m³)"
             # elseif y_units == :angstrom
-            #     Y = profiles[:,k].*cDFT.N_A/1e30
+            #     Y = profiles[:,k].*ClassicalDFT.N_A/1e30
             #     y_norm = " / (kg/m³)"
             # else
             #     Y = profiles[:,k]
@@ -246,7 +246,7 @@ function PlotlyJS.plot(system::cDFT.DFTSystem, structure::cDFT.DFTStructure2DCar
     return plt
 end
 
-function PlotlyJS.plot(system::cDFT.DFTSystem, structure::cDFT.DFTStructure3DCart, profiles; x_units = :normalized, y_units = :normalized)
+function PlotlyJS.plot(system::ClassicalDFT.DFTSystem, structure::ClassicalDFT.DFTStructure3DCart, profiles; x_units = :normalized, y_units = :normalized)
 
     colors = ["rgba(31, 119, 180, 1)",
               "rgba(255, 127, 14, 1)",
@@ -267,23 +267,23 @@ function PlotlyJS.plot(system::cDFT.DFTSystem, structure::cDFT.DFTStructure3DCar
 
     ρb = deepcopy(structure.ρbulk)
 
-    _x = cDFT.uniform_range(structure,1)
+    _x = ClassicalDFT.uniform_range(structure,1)
     x = zeros(ngrid...)
     for i in 1:length(_x)
         x[i,:,:] .= _x[i]
     end
-    _y = cDFT.uniform_range(structure,2)
+    _y = ClassicalDFT.uniform_range(structure,2)
     y = zeros(ngrid...)
     for i in 1:length(_y)
         y[:,i,:] .= _y[i]
     end
-    _z = cDFT.uniform_range(structure,3)
+    _z = ClassicalDFT.uniform_range(structure,3)
     z = zeros(ngrid...)
     for i in 1:length(_z)
         z[:,:,i] .= _z[i]
     end
 
-    L = cDFT.length_scale(model)
+    L = ClassicalDFT.length_scale(model)
 
     layout = PlotlyJS.Layout(autosize=false,width=700,height=470,
              xaxis = PlotlyJS.attr(font_size=12, showgrid=false,            
@@ -296,17 +296,17 @@ function PlotlyJS.plot(system::cDFT.DFTSystem, structure::cDFT.DFTStructure3DCar
 
     plt = PlotlyJS.plot()
 
-    for i in cDFT.@comps
-        for k in cDFT.@chain(i)
+    for i in ClassicalDFT.@comps
+        for k in ClassicalDFT.@chain(i)
             if species.nbeads[i] > 1
                 species_name = model.components[i]
                 group_name = model.groups.flattenedgroups[k]
                 name = "$species_name $group_name"
-                norm_const = model.params.segment[k]*species.size[k]^3*cDFT.N_A
+                norm_const = model.params.segment[k]*species.size[k]^3*ClassicalDFT.N_A
             else
                 species_name = model.components[i]
                 name = "$species_name"
-                norm_const = model.params.segment[i]*species.size[i]^3*cDFT.N_A
+                norm_const = model.params.segment[i]*species.size[i]^3*ClassicalDFT.N_A
             end
 
             if x_units == :normalized

@@ -1,10 +1,10 @@
 module MakiecDFTExt
 
-using cDFT
+using ClassicalDFT
 using Adapt
 using Makie
 
-_maybe_texlabel(s, latex::Bool; upright::Bool=false) = latex ? cDFT.texlabel(s; upright=upright) : s
+_maybe_texlabel(s, latex::Bool; upright::Bool=false) = latex ? ClassicalDFT.texlabel(s; upright=upright) : s
 
 # Digits are already upright in math mode, so plain `texlabel` (no `upright`) is fine for
 # tick numbers -- this just gets them onto the same LaTeX/MathTeXEngine font as every other
@@ -13,7 +13,7 @@ function _format_tick(v::Real)
     s = string(v)
     return endswith(s, ".0") ? s[1:end-2] : s
 end
-_latex_tickformat(latex::Bool) = latex ? (values -> cDFT.texlabel.(_format_tick.(values))) : Makie.automatic
+_latex_tickformat(latex::Bool) = latex ? (values -> ClassicalDFT.texlabel.(_format_tick.(values))) : Makie.automatic
 
 # Every geometry method below returns `Makie.FigureAxisPlot(fig, ax, plt)` rather than a bare
 # `Figure` -- it's still directly `save()`-able (FigureAxisPlot <: Makie.FigureLike) so
@@ -30,7 +30,7 @@ _latex_tickformat(latex::Bool) = latex ? (values -> cDFT.texlabel.(_format_tick.
 # its converged profiles are already volume fractions — so those models get norm_const=1.
 function _norm_const(species, model, i::Int, k::Int)
     hasproperty(model.params, :segment) || return 1.0
-    return species.nbeads[i] > 1 ? model.params.segment[k]*species.size[k]^3*cDFT.N_A : model.params.segment[i]*species.size[i]^3*cDFT.N_A
+    return species.nbeads[i] > 1 ? model.params.segment[k]*species.size[k]^3*ClassicalDFT.N_A : model.params.segment[i]*species.size[i]^3*ClassicalDFT.N_A
 end
 
 _normalized_ylabel(model) = hasproperty(model.params, :segment) ? "ρσ³" : "φ"
@@ -76,7 +76,7 @@ function _group_key(species, model, i::Int, k::Int, level::Symbol)
     if level === :molecule
         return (i,)
     elseif level === :group
-        return species.nbeads[i] > 1 ? (i, cDFT._group_letter(model.groups.flattenedgroups[k])) : (i,)
+        return species.nbeads[i] > 1 ? (i, ClassicalDFT._group_letter(model.groups.flattenedgroups[k])) : (i,)
     else # :bead
         return (i, k)
     end
@@ -87,7 +87,7 @@ function _profile_label(species, model, i::Int, k::Int, level::Symbol)
     if level === :molecule || species.nbeads[i] == 1
         return species_name
     elseif level === :group
-        return "$species_name $(cDFT._group_letter(model.groups.flattenedgroups[k]))"
+        return "$species_name $(ClassicalDFT._group_letter(model.groups.flattenedgroups[k]))"
     else # :bead
         return "$species_name $(model.groups.flattenedgroups[k])"
     end
@@ -97,8 +97,8 @@ end
 function _plot_groups(species, model, plot_by::Symbol)
     members = Dict{Any,Vector{Tuple{Int,Int}}}()
     order = Any[]
-    for i in cDFT.@comps
-        for k in cDFT.@chain(i)
+    for i in ClassicalDFT.@comps
+        for k in ClassicalDFT.@chain(i)
             key = _group_key(species, model, i, k, plot_by)
             if !haskey(members, key)
                 members[key] = Tuple{Int,Int}[]
@@ -111,8 +111,8 @@ function _plot_groups(species, model, plot_by::Symbol)
 end
 
 # Dict{color_key,color}, assigned in first-encountered order from `palette` (defaults to
-# cDFT.CDFT_DEFAULT_COLORS -- override via the `color_scheme` kwarg on `plot(...)`).
-function _assign_colors(color_keys, palette=cDFT.CDFT_DEFAULT_COLORS)
+# ClassicalDFT.CDFT_DEFAULT_COLORS -- override via the `color_scheme` kwarg on `plot(...)`).
+function _assign_colors(color_keys, palette=ClassicalDFT.CDFT_DEFAULT_COLORS)
     colors = Dict{Any,Any}()
     idx = 0
     for key in color_keys
@@ -127,7 +127,7 @@ end
 # For each (label, members) group from `_plot_groups`, its assigned color (keyed at
 # `color_by` granularity, which may be coarser than `plot_by` so several groups can
 # share one color).
-function _group_colors(groups, species, model, color_by::Symbol, palette=cDFT.CDFT_DEFAULT_COLORS)
+function _group_colors(groups, species, model, color_by::Symbol, palette=ClassicalDFT.CDFT_DEFAULT_COLORS)
     color_keys = [_group_key(species, model, members[1]..., color_by) for (_, members) in groups]
     colors = _assign_colors(color_keys, palette)
     return [colors[key] for key in color_keys]
@@ -154,39 +154,39 @@ end
 # e.g. "Arial"; `nothing` = Makie's own default) is applied via `Figure(fonts=(;regular=...))`
 # rather than a global `Theme`, so it stays a per-call option with no persistent state.
 function _cdft_figure(width::Symbol, dpi::Real, font)
-    sz = cDFT.cdft_figure_size(width, dpi)
+    sz = ClassicalDFT.cdft_figure_size(width, dpi)
     return font === nothing ? Figure(size=sz, backgroundcolor=:white) :
                                Figure(size=sz, backgroundcolor=:white, fonts=(; regular=font))
 end
 
-function Makie.plot(system::cDFT.AbstractcDFTSystem, profiles; x_units=:normalized, y_units=:normalized, latex=false, plot_by=:bead, color_by=:bead, color_scheme=cDFT.CDFT_DEFAULT_COLORS, font=nothing, width=:single, dpi=cDFT.CDFT_DPI, grid=false, equilibrium_densities=nothing, only=nothing)
+function Makie.plot(system::ClassicalDFT.AbstractcDFTSystem, profiles; x_units=:normalized, y_units=:normalized, latex=false, plot_by=:bead, color_by=:bead, color_scheme=ClassicalDFT.CDFT_DEFAULT_COLORS, font=nothing, width=:single, dpi=ClassicalDFT.CDFT_DPI, grid=false, equilibrium_densities=nothing, only=nothing)
     return Makie.plot(system, system.structure, profiles; x_units=x_units, y_units=y_units, latex=latex, plot_by=plot_by, color_by=color_by, color_scheme=color_scheme, font=font, width=width, dpi=dpi, grid=grid, equilibrium_densities=equilibrium_densities, only=only)
 end
 
-function Makie.plot(system::cDFT.AbstractcDFTSystem, structure::cDFT.DFTStructure{1,cDFT.Cartesian,M}, profiles; x_units=:normalized, y_units=:mass, latex=false, plot_by=:bead, color_by=:bead, color_scheme=cDFT.CDFT_DEFAULT_COLORS, font=nothing, width=:single, dpi=cDFT.CDFT_DPI, grid=false, equilibrium_densities=nothing, only=nothing) where M
+function Makie.plot(system::ClassicalDFT.AbstractcDFTSystem, structure::ClassicalDFT.DFTStructure{1,ClassicalDFT.Cartesian,M}, profiles; x_units=:normalized, y_units=:mass, latex=false, plot_by=:bead, color_by=:bead, color_scheme=ClassicalDFT.CDFT_DEFAULT_COLORS, font=nothing, width=:single, dpi=ClassicalDFT.CDFT_DPI, grid=false, equilibrium_densities=nothing, only=nothing) where M
     # `equilibrium_densities` only applies to the 2D/3D heatmap/volume methods below -- accepted
     # (and ignored) here too so the generic `Makie.plot(system, profiles; ...)` entry point can
     # forward it unconditionally regardless of the system's structure dimensionality.
     _check_profile_color_by(plot_by, color_by)
     structure = system.structure
     model = system.model
-    if model isa cDFT.ElectrolyteModel
+    if model isa ClassicalDFT.ElectrolyteModel
         model = model.neutralmodel
     end
     species = system.species
 
     bounds = structure.bounds
-    z = cDFT.uniform_range(structure, 1)
-    L = cDFT.length_scale(model)
+    z = ClassicalDFT.uniform_range(structure, 1)
+    L = ClassicalDFT.length_scale(model)
     _ρ = Adapt.adapt(CPU(), profiles)
 
     fig = _cdft_figure(width, dpi, font)
 
     ax = Axis(fig[1, 1];
         xgridvisible=grid, ygridvisible=grid,
-        xgridcolor=cDFT.CDFT_GRID_COLOR, ygridcolor=cDFT.CDFT_GRID_COLOR,
-        xticklabelsize=cDFT.CDFT_TICK_LABELSIZE, yticklabelsize=cDFT.CDFT_TICK_LABELSIZE,
-        xlabelsize=cDFT.CDFT_AXES_LABELSIZE, ylabelsize=cDFT.CDFT_AXES_LABELSIZE,
+        xgridcolor=ClassicalDFT.CDFT_GRID_COLOR, ygridcolor=ClassicalDFT.CDFT_GRID_COLOR,
+        xticklabelsize=ClassicalDFT.CDFT_TICK_LABELSIZE, yticklabelsize=ClassicalDFT.CDFT_TICK_LABELSIZE,
+        xlabelsize=ClassicalDFT.CDFT_AXES_LABELSIZE, ylabelsize=ClassicalDFT.CDFT_AXES_LABELSIZE,
         xtickformat=_latex_tickformat(latex), ytickformat=_latex_tickformat(latex))
 
     if x_units == :normalized
@@ -207,7 +207,7 @@ function Makie.plot(system::cDFT.AbstractcDFTSystem, structure::cDFT.DFTStructur
             Mw = model.params.Mw[k]
             return _ρ[:,k].*Mw/1e3
         elseif y_units == :angstrom
-            return _ρ[:,k].*cDFT.N_A/1e30
+            return _ρ[:,k].*ClassicalDFT.N_A/1e30
         else
             return _ρ[:,k]
         end
@@ -251,34 +251,34 @@ function Makie.plot(system::cDFT.AbstractcDFTSystem, structure::cDFT.DFTStructur
         ax.ylabel = _maybe_texlabel("ρ / (mol/m³)",latex)
     end
 
-    Makie.axislegend(ax; position=:lt, framevisible=false, labelsize=cDFT.CDFT_LEGEND_FONTSIZE)
+    Makie.axislegend(ax; position=:lt, framevisible=false, labelsize=ClassicalDFT.CDFT_LEGEND_FONTSIZE)
 
     return Makie.FigureAxisPlot(fig, ax, plt)
 end
 
-function Makie.plot(system::cDFT.AbstractcDFTSystem, structure::Union{cDFT.DFTStructure{1,cDFT.Spherical,M},cDFT.DFTStructure{1,cDFT.Cylindrical,M}}, profiles; x_units=:normalized, y_units=:mass, latex=false, plot_by=:bead, color_by=:bead, color_scheme=cDFT.CDFT_DEFAULT_COLORS, font=nothing, width=:single, dpi=cDFT.CDFT_DPI, grid=false, equilibrium_densities=nothing, only=nothing) where M
+function Makie.plot(system::ClassicalDFT.AbstractcDFTSystem, structure::Union{ClassicalDFT.DFTStructure{1,ClassicalDFT.Spherical,M},ClassicalDFT.DFTStructure{1,ClassicalDFT.Cylindrical,M}}, profiles; x_units=:normalized, y_units=:mass, latex=false, plot_by=:bead, color_by=:bead, color_scheme=ClassicalDFT.CDFT_DEFAULT_COLORS, font=nothing, width=:single, dpi=ClassicalDFT.CDFT_DPI, grid=false, equilibrium_densities=nothing, only=nothing) where M
     # `equilibrium_densities` only applies to the 2D/3D heatmap/volume methods below -- see the
     # Cartesian 1D method just above for why it's accepted (and ignored) here too.
     _check_profile_color_by(plot_by, color_by)
     structure = system.structure
     model = system.model
-    if model isa cDFT.ElectrolyteModel
+    if model isa ClassicalDFT.ElectrolyteModel
         model = model.neutralmodel
     end
     species = system.species
 
     bounds = structure.bounds
-    z = cDFT.structure_r(structure)
-    L = cDFT.length_scale(model)
+    z = ClassicalDFT.structure_r(structure)
+    L = ClassicalDFT.length_scale(model)
 
     _ρ = Adapt.adapt(CPU(), profiles)
 
     fig = _cdft_figure(width, dpi, font)
     ax = Axis(fig[1, 1];
         xgridvisible=grid, ygridvisible=grid,
-        xgridcolor=cDFT.CDFT_GRID_COLOR, ygridcolor=cDFT.CDFT_GRID_COLOR,
-        xticklabelsize=cDFT.CDFT_TICK_LABELSIZE, yticklabelsize=cDFT.CDFT_TICK_LABELSIZE,
-        xlabelsize=cDFT.CDFT_AXES_LABELSIZE, ylabelsize=cDFT.CDFT_AXES_LABELSIZE,
+        xgridcolor=ClassicalDFT.CDFT_GRID_COLOR, ygridcolor=ClassicalDFT.CDFT_GRID_COLOR,
+        xticklabelsize=ClassicalDFT.CDFT_TICK_LABELSIZE, yticklabelsize=ClassicalDFT.CDFT_TICK_LABELSIZE,
+        xlabelsize=ClassicalDFT.CDFT_AXES_LABELSIZE, ylabelsize=ClassicalDFT.CDFT_AXES_LABELSIZE,
         xtickformat=_latex_tickformat(latex), ytickformat=_latex_tickformat(latex))
 
     if x_units == :normalized
@@ -299,7 +299,7 @@ function Makie.plot(system::cDFT.AbstractcDFTSystem, structure::Union{cDFT.DFTSt
             Mw = model.params.Mw[k]
             return _ρ[:,k].*Mw/1e3
         elseif y_units == :angstrom
-            return _ρ[:,k].*cDFT.N_A/1e30
+            return _ρ[:,k].*ClassicalDFT.N_A/1e30
         else
             return _ρ[:,k]
         end
@@ -342,12 +342,12 @@ function Makie.plot(system::cDFT.AbstractcDFTSystem, structure::Union{cDFT.DFTSt
         ax.ylabel = _maybe_texlabel("ρ / (mol/m³)",latex)
     end
 
-    Makie.axislegend(ax; position=:lt, framevisible=false, labelsize=cDFT.CDFT_LEGEND_FONTSIZE)
+    Makie.axislegend(ax; position=:lt, framevisible=false, labelsize=ClassicalDFT.CDFT_LEGEND_FONTSIZE)
 
     return Makie.FigureAxisPlot(fig, ax, plt)
 end
 
-function Makie.plot(system::Union{cDFT.DFTSystem,cDFT.DGTSystem,cDFT.SCFTSystem}, structure::cDFT.DFTStructure{2,cDFT.Cartesian,M}, profiles; x_units=:normalized, y_units=:normalized, latex=false, plot_by=:bead, color_by=:bead, color_scheme=cDFT.CDFT_DEFAULT_COLORS, font=nothing, width=:single, dpi=cDFT.CDFT_DPI, grid=false, equilibrium_densities=nothing, only=nothing) where M
+function Makie.plot(system::Union{ClassicalDFT.DFTSystem,ClassicalDFT.DGTSystem,ClassicalDFT.SCFTSystem}, structure::ClassicalDFT.DFTStructure{2,ClassicalDFT.Cartesian,M}, profiles; x_units=:normalized, y_units=:normalized, latex=false, plot_by=:bead, color_by=:bead, color_scheme=ClassicalDFT.CDFT_DEFAULT_COLORS, font=nothing, width=:single, dpi=ClassicalDFT.CDFT_DPI, grid=false, equilibrium_densities=nothing, only=nothing) where M
     _check_profile_color_by(plot_by, color_by)
     structure = system.structure
     model = system.model
@@ -356,14 +356,14 @@ function Makie.plot(system::Union{cDFT.DFTSystem,cDFT.DGTSystem,cDFT.SCFTSystem}
     bounds = structure.bounds
 
     _ρ = Adapt.adapt(CPU(), profiles)
-    x = cDFT.uniform_range(structure,1)
-    y = cDFT.uniform_range(structure,2)
-    L = cDFT.length_scale(model)
+    x = ClassicalDFT.uniform_range(structure,1)
+    y = ClassicalDFT.uniform_range(structure,2)
+    L = ClassicalDFT.length_scale(model)
 
     fig = _cdft_figure(width, dpi, font)
     ax = Axis(fig[1, 1];
         xgridvisible=grid, ygridvisible=grid,
-        xgridcolor=cDFT.CDFT_GRID_COLOR, ygridcolor=cDFT.CDFT_GRID_COLOR,
+        xgridcolor=ClassicalDFT.CDFT_GRID_COLOR, ygridcolor=ClassicalDFT.CDFT_GRID_COLOR,
         xtickformat=_latex_tickformat(latex), ytickformat=_latex_tickformat(latex),
         aspect=Makie.DataAspect())
 
@@ -439,17 +439,17 @@ function Makie.plot(system::Union{cDFT.DFTSystem,cDFT.DGTSystem,cDFT.SCFTSystem}
     return Makie.FigureAxisPlot(fig, ax, plt)
 end
 
-function Makie.plot(system::Union{cDFT.DFTSystem,cDFT.DGTSystem,cDFT.SCFTSystem}, structure::cDFT.DFTStructure{3,cDFT.Cartesian,M}, profiles; x_units=:normalized, y_units=:normalized, latex=false, plot_by=:bead, color_by=:bead, color_scheme=cDFT.CDFT_DEFAULT_COLORS, font=nothing, width=:single, dpi=cDFT.CDFT_DPI, grid=false, equilibrium_densities=nothing, only=nothing) where M
+function Makie.plot(system::Union{ClassicalDFT.DFTSystem,ClassicalDFT.DGTSystem,ClassicalDFT.SCFTSystem}, structure::ClassicalDFT.DFTStructure{3,ClassicalDFT.Cartesian,M}, profiles; x_units=:normalized, y_units=:normalized, latex=false, plot_by=:bead, color_by=:bead, color_scheme=ClassicalDFT.CDFT_DEFAULT_COLORS, font=nothing, width=:single, dpi=ClassicalDFT.CDFT_DPI, grid=false, equilibrium_densities=nothing, only=nothing) where M
     _check_profile_color_by(plot_by, color_by)
     structure = system.structure
     model = system.model
     species = system.species
     _ρ = Adapt.adapt(CPU(), profiles)
 
-    x = cDFT.uniform_range(structure,1)
-    y = cDFT.uniform_range(structure,2)
-    z = cDFT.uniform_range(structure,3)
-    L = cDFT.length_scale(model)
+    x = ClassicalDFT.uniform_range(structure,1)
+    y = ClassicalDFT.uniform_range(structure,2)
+    z = ClassicalDFT.uniform_range(structure,3)
+    L = ClassicalDFT.length_scale(model)
 
     if x_units == :normalized
         X, Y, Z = x./L, y./L, z./L
