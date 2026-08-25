@@ -19,7 +19,7 @@ using NLSolvers, FFTW, LinearAlgebra
 import AbstractFFTs: Plan
 using Clapeyron
 using Clapeyron: d, N_A, k_B, R̄, e_c, ϵ_0
-using Clapeyron: @comps, @groups
+using Clapeyron: @comps, @groups, @sum
 using Clapeyron: Solvers, log, sqrt, log1p, PackedVofV, sparse, SparseMatrixCSC
 using Clapeyron: assoc_similar, assoc_matrix_solve, assoc_options, assoc_pair_length
 using Clapeyron: indices, diagvalues
@@ -30,12 +30,6 @@ using StaticArrays
 # using SIAMFANLEquations
 using KernelAbstractions, Adapt, Enzyme
 using Hankel
-
-#if !isdefined(Clapeyron,Symbol("@sum"))
-    include("utils/sum.jl")
-#else
-    #using Clapeyron: @sum
-#end
 
 include("base/base.jl")
 
