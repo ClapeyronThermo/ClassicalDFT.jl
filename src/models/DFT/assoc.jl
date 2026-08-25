@@ -30,12 +30,7 @@ function pack_assoc_params(model, HSd, sigma=model.params.sigma.values)
     kap_vals = model.params.bondvol.values
 
     for idx in 1:length(eps_vals.values)
-        if hasfield(Clapeyron.Compressed4DMatrix,:indices)
-            i, j, a, b = Clapeyron.idx_to_ijab(eps_vals.indices[idx])
-        else
-            i, j = eps_vals.outer_indices[idx]
-            a, b = eps_vals.inner_indices[idx]
-        end
+        i, j, a, b = Clapeyron.idx_to_ijab(eps_vals,idx)
         push!(assoc_icomp, i); push!(assoc_jcomp, j)
         push!(assoc_isite, a); push!(assoc_jsite, b)
         push!(assoc_eps, eps_vals.values[idx])
@@ -91,8 +86,7 @@ function pack_assoc_params_gc(model, HSd, sigma=model.params.sigma.values)
     site_to_bead    = Dict{Tuple{Int,Int}, Int}()
 
     for idx in 1:length(eps_vals.values)
-        i, j = eps_vals.outer_indices[idx]
-        a, b = eps_vals.inner_indices[idx]
+        i, j, a, b = idx_to_ijab(eps_vals,idx)
         k = sites.site_translator[i][a][1]
         l = sites.site_translator[j][b][1]
         if !haskey(site_to_bead, (i, a))
@@ -116,8 +110,7 @@ function pack_assoc_params_gc(model, HSd, sigma=model.params.sigma.values)
     total_sites = sum(bead_site_count)
 
     for idx in 1:length(eps_vals.values)
-        i, j = eps_vals.outer_indices[idx]
-        a, b = eps_vals.inner_indices[idx]
+        i, j, a, b = idx_to_ijab(eps_vals,idx)
         k = sites.site_translator[i][a][1]
         l = sites.site_translator[j][b][1]
         push!(assoc_icomp, k);  push!(assoc_jcomp, l)

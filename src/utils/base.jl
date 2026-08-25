@@ -108,3 +108,15 @@ function get_chain_idx(param::SiteParam, i::Int64, j::Int64, a::Int64, b::Int64)
         return k,l
     end
 end
+
+#utility for working with compressed4Dmatrices
+
+if hasfield(Clapeyron.Compressed4DMatrix,:site_offsets)
+    idx_to_ijab(mat::Compressed4DMatrix,i) = Clapeyron.idx_to_ijab(mat,i)
+else
+    function idx_to_ijab(mat::Compressed4DMatrix,i)
+        i,j = mat.outer_indices[i]
+        a,b = mat.inner_indices[i]
+        return i,j,a,b
+    end
+end
