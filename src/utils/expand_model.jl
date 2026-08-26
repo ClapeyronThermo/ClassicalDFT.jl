@@ -1,5 +1,5 @@
 function expand_model(model::MODEL,mol_structure::Dict{String,<:MolStructure} = Dict{String,MolStructure}()) where MODEL <: EoSModel
-    if !Clapeyron.has_groups(model)
+    if !Clapeyron.has_groups(model) || model <: Clapeyron.HomogcPCPSAFTModel
         return model
     end
 
