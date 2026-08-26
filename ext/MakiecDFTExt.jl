@@ -1,6 +1,7 @@
 module MakiecDFTExt
 
 using ClassicalDFT
+import ClassicalDFT: Clapeyron
 using Adapt
 using Makie
 
