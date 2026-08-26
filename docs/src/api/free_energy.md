@@ -17,6 +17,7 @@ for a given density profile. Not typically called directly by users.
 
 ```@docs
 ClassicalDFT.free_energy
+ClassicalDFT.grand_potential
 ClassicalDFT.δFδρ_res
 ClassicalDFT.F_res
 ClassicalDFT.F_ideal

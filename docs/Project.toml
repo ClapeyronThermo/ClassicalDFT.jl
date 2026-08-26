@@ -1,6 +1,7 @@
 [deps]
 ChemicalIdentifiers = "fa4ea961-1416-484e-bda2-883ee1634ba5"
 Clapeyron = "7c7805af-46cc-48c9-995b-ed0ed2dc909a"
+ClassicalDFT = "9d464fa6-e93d-4d45-9e5b-7c20149a9a88"
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
 DocumenterVitepress = "4710194d-e776-4893-9690-8d956a29c365"
 GCIdentifier = "b7ea765e-cbac-4e4a-9b0d-5427cc302506"

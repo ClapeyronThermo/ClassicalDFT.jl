@@ -1,4 +1,5 @@
-push!(LOAD_PATH,"../src/")
+using Pkg
+Pkg.develop(PackageSpec(path=joinpath(@__DIR__, "..")))
 using Documenter, DocumenterVitepress, Clapeyron, ClassicalDFT
 
 makedocs(sitename = "ClassicalDFT.jl",
