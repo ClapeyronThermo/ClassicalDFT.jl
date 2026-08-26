@@ -112,9 +112,9 @@ end
 #utility for working with compressed4Dmatrices
 
 if hasfield(Clapeyron.Compressed4DMatrix,:site_offsets)
-    idx_to_ijab(mat::Compressed4DMatrix,i) = Clapeyron.idx_to_ijab(mat,i)
+    idx_to_ijab(mat::Clapeyron.Compressed4DMatrix,i) = Clapeyron.idx_to_ijab(mat,i)
 else
-    function idx_to_ijab(mat::Compressed4DMatrix,i)
+    function idx_to_ijab(mat::Clapeyron.Compressed4DMatrix,i)
         i,j = mat.outer_indices[i]
         a,b = mat.inner_indices[i]
         return i,j,a,b
