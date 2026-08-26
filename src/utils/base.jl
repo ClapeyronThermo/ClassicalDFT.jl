@@ -13,7 +13,7 @@ onevec(model) = Clapeyron.FillArrays.Ones(length(model))
 
 macro chain(component, args...)
     quote
-        if hasfield(typeof(model), :groups)
+        if hasfield(typeof(model), :groups) && !(typeof(model) <: Clapeyron.HomogcPCPSAFTModel)
             model.groups.i_groups[$(component)]
         else
             $(component)
