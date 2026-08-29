@@ -1,1 +1,0 @@
-import{_ as e,o as i,c as s,ao as t}from"./chunks/framework.CZMy3Di0.js";const u=JSON.parse('{"title":"FAQ","description":"","frontmatter":{},"headers":[],"relativePath":"faq.md","filePath":"faq.md","lastUpdated":null}'),l={name:"faq.md"};function r(n,a,o,h,d,c){return i(),s("div",null,[...a[0]||(a[0]=[t("",15)])])}const m=e(l,[["render",r]]);export{u as __pageData,m as default};
