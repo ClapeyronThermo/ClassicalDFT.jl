@@ -7,21 +7,38 @@ function TangentHSPropagator(model::EoSModel,species::DFTSpecies,structure::DFTS
     ω = structure_ω(structure, device, FP)
     ω = Adapt.adapt(device, ω)
     ω = _scaled_ω(ω, L, FP)
+
+    # ω̄ only depends on the grid, not on the bead pair (j,k), so it's loop-invariant.
+    ω̄ = dropdims(sqrt.(sum(abs2, ω, dims=nd+1)), dims=nd+1)  # lives on same backend as ω
+
+    # Lanczos σ-factor: sin(ω̄R)/(ω̄R) is the Fourier transform of a spherical-shell
+    # delta function δ(|r|−R), a genuinely discontinuous real-space kernel, so it
+    # decays slowly and is sign-indefinite (oscillates past ω̄R>π) rather than rolling
+    # off toward the grid's Nyquist frequency. Convolved unwindowed against a sharp
+    # density feature, this rings (Gibbs phenomenon) into small negative/zero
+    # excursions in propagate!'s Gcα/Gp, which then hit log(Gp)/log(Gcα) below and
+    # produce NaN/-Inf. σ(ω̄)=sinc(ω̄/ω̄_max) tapers the kernel to 0 at the grid's own
+    # resolution limit; σ(0)=1, so the ω̄=0 branch is unaffected. Same fix already
+    # applied to the spherical/cylindrical constructor below and to the :∫ρzdz kernel
+    # in weighted_densities.jl; ω̄_max here uses that file's per-axis-Nyquist
+    # convention (rather than the radial branch's plain maximum(ω̄)) since this
+    # constructor is general-nd and axes need not share the same extent.
+    ω̄_max = minimum(maximum(abs, selectdim(ω, nd+1, dim)) for dim in 1:nd)
+    σ = sinc.(ω̄ ./ ω̄_max)
+
     for i in @comps
         l = 1
         for j in @chain(i)
             for k in @chain(i)[l:end]
                 R = FP((species.size[j] + species.size[k])/L*π)
-                
-                ω̄ = dropdims(sqrt.(sum(abs2, ω, dims=nd+1)), dims=nd+1)  # lives on same backend as ω
-                ω̄R   = ω̄ .* R  
 
+                ω̄R = ω̄ .* R
 
                 mask = ω̄ .== 0
                 selectdim(selectdim(Ω, nd+1, j), nd+1, k) .= ifelse.(mask,
                         1,                  # ω̄=0 case
                         sin.(ω̄R)./ω̄R        # ω̄≠0 case
-                    )
+                    ) .* σ
                 selectdim(selectdim(Ω, nd+1, k), nd+1, j) .= selectdim(selectdim(Ω, nd+1, j), nd+1, k)
             end
             l += 1
