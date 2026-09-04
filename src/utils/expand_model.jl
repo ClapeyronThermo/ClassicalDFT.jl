@@ -266,7 +266,12 @@ function expand_params(params::PARAM, groups, sites, ngroups_k) where PARAM
                 end
 
                 TT = eltype(values)
-                values = Clapeyron.Compressed4DMatrix(values,outer_indices,inner_indices)
+                if hasfield(Clapeyron.Compressed4DMatrix,:site_offsets)
+                    values = Clapeyron.Compressed4DMatrix(values,outer_indices,inner_indices,copy(sites.n_sites.p))
+                else
+                    values = Clapeyron.Compressed4DMatrix(values,outer_indices,inner_indices)
+                end
+                
                 # println(components)
                 push!(newparams, AssocParam{TT}(name,
                                             groups.components,

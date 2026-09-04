@@ -92,18 +92,30 @@ function get_connectivity(::EoSModel, cs::CustomStructure)
     return 1:n, names, bond_mat
 end
 
-# Dispatches to the GCIdentifier/ChemicalIdentifiers extension (if loaded) to resolve GC
-# connectivity directly from a chemical name. This is *not* implemented as a competing
-# `ClassicalDFT.get_connectivity(::EoSModel, ::String)` method inside the extension itself: Julia
-# disallows two modules defining an identical method signature during extension
-# precompilation, so the extension instead defines a plainly-named `get_connectivity_from_name`
-# that this fallback looks up and calls via `Base.get_extension` at runtime.
+
+
+function get_connectivity_from_name end
+
+
 function get_connectivity(model::EoSModel, name::String)
-    ext = Base.get_extension(@__MODULE__, :GCIdentifierCDFTExt)
-    if !isnothing(ext)
-        return ext.get_connectivity_from_name(model, name)
+    #=
+    strategy:
+    
+    first, we try to look up the chemical name in the local identifiers database (in Clapeyron.jl)
+    if there is a failure (GCIdentifier not loaded, for example), throw.
+
+    Just after that,We try to search in the extended database in ChemicalIdentifiers.
+    =#
+    try
+        smiles_str = Clapeyron.SMILES(name)[1]
+        if !isempty(smiles)
+            return get_connectivity(model,smiles(smiles_str))
+        end
+    catch e
+        e != MissingException && rethrow(e)
     end
-    error("""
+
+    isnothing(Base.get_extension(@__MODULE__, :GCWithSearch)) && error("""
     Auto-detection of GC connectivity from a chemical name requires GCIdentifier and
     ChemicalIdentifiers. Either:
       • load both packages before constructing the DFTSystem, or
@@ -113,4 +125,5 @@ function get_connectivity(model::EoSModel, name::String)
           DFTSystem(model, structure, options;
               mol_structure = Dict("$(name)" => smiles("CCCCCC")))
     """)
+    get_connectivity_from_name(model, name)
 end

@@ -92,6 +92,11 @@ using ClassicalDFT.Clapeyron
         μ2 = ClassicalDFT.δFδρ_res(system, ρ)
 
         @test μ1[1] ≈ μ2[1] rtol = 1e-6
+        
+        
+        model1 = SAFTgammaMie(["water","hexane"])
+        model2 = ClassicalDFT.expand_model(model1, Dict("water"=>smiles("O"), "hexane"=>smiles("CCCCCC")))
+        @test length(split_model(model2)) == 2
     end
 
     @testset "SAFTgammaMie hexane+butane" begin
