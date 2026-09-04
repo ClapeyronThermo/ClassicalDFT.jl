@@ -21,7 +21,7 @@ julia> options = DFTOptions()
 
 julia> using ThreadPinning
 
-julia> options = DFTOptions(CPU(4, [0,1,12,13]))
+julia> options = DFTOptions(CPU(4, [0,1,12,13]))  # pins this process's threads to core IDs [0,1,12,13]; run julia with `-t 4` to actually get 4 threads
 
 julia> options = DFTOptions(CPU(); precision = Float32)
 ```

@@ -113,5 +113,7 @@ function preallocate_model(system::DGTSystem, ρ)
         fwd_cache = nothing
     end
 
+    _warmup_cpu_kernel!(system, CPU(), n, δf, f_val, δf_val, params, nc, nd, fwd_cache)
+
     return n, δf, fft_buf, in_buf, out_buf, plan, iplan, params, f_val, δf_val, nc, nd, fwd_cache
 end

@@ -247,6 +247,8 @@ function preallocate_model(system::DFTSystem, ρ)
         fwd_cache = nothing
     end
 
+    _warmup_cpu_kernel!(system, backend, n, δf, f_val, δf_val, params, nc, nd, fwd_cache)
+
     return n, δf, fft_buf, in_buf, out_buf, plan, iplan, params, f_val, δf_val, nc, nd, fwd_cache
 end
 
@@ -291,6 +293,8 @@ function preallocate_model(system::ElectrolyteDFTSystem, ρ)
     else
         fwd_cache = nothing
     end
+
+    _warmup_cpu_kernel!(system, backend, n, δf, f_val, δf_val, params, nc, nd, fwd_cache)
 
     return n, δf, fft_buf, in_buf, out_buf, plan, iplan, params, f_val, δf_val, nc, nd, fwd_cache
 end
@@ -408,6 +412,59 @@ receives ∂f_res(n[kk,:])/∂n[kk, f_k, c_k].
         BatchDuplicated(n,     dn_tuple),
         Const(params), Const(temperature), Const(Val(NC)), Const(Val(ND))
     )
+end
+
+"""
+    _warmup_cpu_kernel!(system, backend, n, δf, f_val, δf_val, params, nc, nd, fwd_cache)
+
+Force the Enzyme/KernelAbstractions AD kernel matching `system.options.ad_mode` to compile
+once via a tiny single-block launch (`ndrange=(1,)`, which KernelAbstractions' CPU backend
+always runs on a single thread/task) *before* any real, full-grid, multi-threaded launch.
+
+LLVM's ORC JIT compiles a kernel lazily on its first invocation. If `Threads.nthreads() > 1`
+and the real (large) launch is that first invocation, KernelAbstractions' `Threads.@spawn`-based
+CPU backend has multiple threads race into the *same* not-yet-compiled closure simultaneously
+— which deadlocks in LLVM's lazy-compilation trampolines rather than compiling once and
+sharing the result. Confirmed via a live `lldb` backtrace on a hung process: the main thread
+parked in `@sync`'s `wait()`, a worker thread blocked in `llvm::orc::LocalTrampolinePool::reenter`
+waiting on a future that never resolves, and the actual compile-worker thread itself stuck.
+Reproduced with a single-component associating system (e.g. `PCSAFT(["water"])`) above
+KernelAbstractions' 1024-point single-workgroup grain size, under `-t 4`; never triggered by
+a short-to-compile non-associating functional, since the race window is too small to hit in
+practice. Warming up on a single block first compiles the closure before any thread can race
+on it. `n` only needs to hold values in-domain for `f_res` (not physically meaningful — it's
+fully overwritten by `evaluate_field!` before any real use), and the warm-up output is
+discarded. A no-op when there's only one thread to race in the first place.
+"""
+function _warmup_cpu_kernel!(system, backend, n, δf, f_val, δf_val, params, nc, nd, fwd_cache)
+    (backend isa CPU && Threads.nthreads() > 1) || return nothing
+
+    NF = size(n, ndims(n) - 1)
+    NB = size(n, ndims(n))
+    temperature = convert(fptype(system.options), system.structure.conditions[2])
+    M = _kernel_type(system)
+    fill!(n, eltype(n)(1e-6))
+
+    ad_mode = system.options.ad_mode
+    if ad_mode === :forward_batch
+        dn_seeds, df_outs, BATCH_val = fwd_cache
+        kernel = δf_fwd_batch_kernel!(backend)
+        kernel(df_outs, n, f_val, dn_seeds, params, temperature,
+            Val(NF), Val(NB), Val(nc), Val(nd), BATCH_val, M; ndrange = (1,))
+    elseif ad_mode === :forward
+        dn_seeds, df_outs, _ = fwd_cache
+        kernel = δf_fwd_kernel!(backend)
+        kernel(df_outs[1], n, f_val, dn_seeds[1], params, temperature,
+            Val(NF), Val(NB), Val(nc), Val(nd), M; ndrange = (1,))
+    elseif ad_mode === :reverse
+        fill!(δf_val, 1)
+        kernel = δf_rev_kernel!(backend)
+        kernel(δf, n, f_val, δf_val, params, temperature,
+            Val(NF), Val(NB), Val(nc), Val(nd), M; ndrange = (1,))
+        fill!(δf, 0)
+    end
+    synchronize(backend)
+    return nothing
 end
 
 export length_scale
