@@ -85,6 +85,16 @@ end
     # large-kappa limit: kappa_hat_1 -> 1 - 1/kappa
     κ̂_large = ClassicalDFT.bending_eigenvalues(1000.0, L_max)
     @test isapprox(κ̂_large[2], 1 - 1/1000.0; rtol=1e-2)
+
+    # exact rigid-rod limit (kappa=Inf): identity kernel, kappa_hat_l = 1 for every l,
+    # with no besselix overflow/AmosException (besselix itself throws for kappa=Inf or
+    # very large finite kappa, e.g. 1e10 -- confirmed separately -- so this exercises the
+    # dedicated early-return, not besselix).
+    for L_max_inf in (0, 3, 6, 20)
+        κ̂_inf = ClassicalDFT.bending_eigenvalues(Inf, L_max_inf)
+        @test length(κ̂_inf) == L_max_inf + 1
+        @test all(κ̂_inf .== 1.0)
+    end
 end
 
 # Exact discrete freely-rotating-chain (FRC) end-to-end mean-squared-distance formula
@@ -303,6 +313,38 @@ end
     system = ClassicalDFT.SCFTSystem(model, structure, ClassicalDFT.DFTOptions();
         mol_structure=mol_structure, ensemble=[:canonical], n_molecules=[4.0])
     @test system.propagator.sht.L_max == 5
+end
+
+@testset "exact rigid-rod limit (lp=Inf): junction bond inherits the flexible neighbor's κ" begin
+    # A is exactly rigid (lp=Inf), B is flexible (lp/b=2.0). Same-species bonds use their
+    # own species' κ directly (unaffected by the junction special case); the single A-B
+    # junction bond should match B's OWN eigenvalues, not the RMS-with-Inf (which would
+    # make it all-ones too, identical to the A-A bond -- the bug this special case fixes).
+    L_max = 8
+    b = [1.0, 1.0]
+    lp = [Inf, 2.0]
+    chi = zeros(2, 2); chi[1, 2] = chi[2, 1] = 1.0
+    N_A, N_B = 3, 3
+    model = ClassicalDFT.SCFTWormLikeChainFluid([("diblock", ["A"=>N_A, "B"=>N_B])], b, lp, chi;
+                                                 rho0=1.0, kappa=20.0, L_max=L_max)
+    mol_structure = Dict("diblock" => ClassicalDFT.custom_structure("A"^N_A * "B"^N_B))
+    structure = ClassicalDFT.Uniform1DCart((0.0, 0.0), [1.0], [0.0, 8.0], 16)
+    system = ClassicalDFT.SCFTSystem(model, structure, ClassicalDFT.DFTOptions();
+        mol_structure=mol_structure, ensemble=[:canonical], n_molecules=[1.0])
+
+    sht = system.propagator.sht
+    eig_B = ClassicalDFT.expand_eig_to_lm(ClassicalDFT.bending_eigenvalues(2.0, L_max), sht)
+    eig_ones = ClassicalDFT.expand_eig_to_lm(ClassicalDFT.bending_eigenvalues(Inf, L_max), sht)
+
+    bend_eig = system.propagator.bend_eig
+    @test length(bend_eig) == 3  # (A,A), (B,B), and the (A,B) junction
+    same_species_eigs = [eig for ((α, β), eig) in bend_eig if α == β]
+    junction_eigs = [eig for ((α, β), eig) in bend_eig if α != β]
+    @test length(same_species_eigs) == 2
+    @test length(junction_eigs) == 1
+    @test any(e -> e == eig_ones, same_species_eigs)  # the rigid species' own bond
+    @test any(e -> e == eig_B, same_species_eigs)      # the flexible species' own bond
+    @test junction_eigs[1] == eig_B  # junction: flexible side's own κ, NOT all-ones
 end
 
 end # testset "WLC"

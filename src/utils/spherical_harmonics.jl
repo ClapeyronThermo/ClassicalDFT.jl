@@ -304,14 +304,19 @@ degree `l`, independent of order `m` — the orientation-space analogue of
 with eigenvalue `κ̂_l = i_l(κ)/i_0(κ)`. `κ̂_1` is also exactly the bond-orientation
 correlation `⟨u_{k-1}·u_k⟩` (the Langevin function `L(κ) = coth(κ) - 1/κ`), used directly
 by the discrete freely-rotating-chain end-to-end-distance formula (`test/test_wlc.jl`).
-`κ=0` (fully flexible/isotropic bond) gives `κ̂_0=1`, `κ̂_l=0` for `l≥1`.
+`κ=0` (fully flexible/isotropic bond) gives `κ̂_0=1`, `κ̂_l=0` for `l≥1`. `κ=Inf` (exact
+rigid-rod limit, zero reorientation freedom) gives `κ̂_l=1` for every `l`, since
+`i_l(κ)/i_0(κ) → 1` as `κ→∞` for any fixed `l` — the bending kernel becomes the identity
+operator exactly, with no `L_max`-dependent resolution error.
 
 `i_l(κ) = sqrt(π/(2κ)) besseli(l+1/2, κ)` grows like `e^κ`, overflowing `Float64` for
 `κ ≳ 700` — since only the ratio `i_l(κ)/i_0(κ)` is ever needed, and the `sqrt(π/(2κ))`
 prefactor and `e^κ` growth are common to every `l`, both cancel exactly, so this uses
 `SpecialFunctions.besselix` (the exponentially-scaled Bessel function,
 `besselix(ν,κ) = besseli(ν,κ)e^{-κ}`) for both numerator and denominator — overflow-safe
-at any `κ`, with the `e^κ` factors cancelling before either side is ever formed.
+at any finite `κ`, with the `e^κ` factors cancelling before either side is ever formed.
+`besselix` itself throws for `κ=Inf` (and for very large finite `κ`, e.g. `1e10`), so
+`κ=Inf` is handled as its own early-return rather than falling through to `besselix`.
 """
 function bending_eigenvalues(κ::Real, L_max::Int)
     FT = float(typeof(κ))
@@ -319,6 +324,7 @@ function bending_eigenvalues(κ::Real, L_max::Int)
     κ̂ = zeros(FT, L_max + 1)
     κ̂[1] = one(FT)
     κ == zero(FT) && return κ̂
+    isinf(κ) && return ones(FT, L_max + 1)
     i0x = besselix(FT(0.5), κ)
     for l in 1:L_max
         ilx = besselix(FT(l) + FT(0.5), κ)

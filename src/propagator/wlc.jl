@@ -24,7 +24,11 @@ FP)` constructor signature every `DFTPropagator` uses.
 
 `model.params.b`/`model.params.lp` give per-species bond length / persistence length;
 `κ_α = lp_α/b_α`. For a junction bond `(α,β)`, `b_bond = sqrt((b_α²+b_β²)/2)` (matching
-`DiscreteGaussianChainPropagator`'s convention) and `κ_bond = sqrt((κ_α²+κ_β²)/2)`.
+`DiscreteGaussianChainPropagator`'s convention) and `κ_bond = sqrt((κ_α²+κ_β²)/2)`,
+except when exactly one side is the exact rigid-rod limit (`κ=Inf`, i.e. `lp=Inf`): then
+`κ_bond` is simply the *other*, finite side's own `κ`, not the RMS (which would make the
+junction itself perfectly rigid too, forcing it exactly parallel to the rigid neighbor —
+nothing requires that just because one neighbor can't reorient along its own length).
 
 Supports `dimension(structure) ∈ {1,2,3}` — orientation `u` is always a full 3-component
 unit vector (tracked via `sht`/spherical harmonics regardless of the spatial grid's own
@@ -120,7 +124,14 @@ function WLCPropagator(
         else
             b_bond = sqrt(FP(b_species[α]^2 + b_species[β]^2) / 2)
             κα, κβ = lp_species[α] / b_species[α], lp_species[β] / b_species[β]
-            κ_bond = sqrt(FP(κα^2 + κβ^2) / 2)
+            if isinf(κα) != isinf(κβ)
+                # Exactly one side rigid: use the flexible side's own κ rather than
+                # letting Inf dominate the RMS below, which would over-constrain the
+                # junction to be exactly parallel to the rigid neighbor.
+                κ_bond = FP(isinf(κα) ? κβ : κα)
+            else
+                κ_bond = sqrt(FP(κα^2 + κβ^2) / 2)
+            end
         end
 
         phase = zeros(CT, rfft_ngrid..., n_orient)
