@@ -312,7 +312,7 @@ a second field buffer `w_new`, quadrature weights/`V_eff`, the bulk field `w_bul
 `quadrature` is a solve-time choice (not a system invariant), so it's accepted as a keyword
 here and forwarded from `preallocate(system, ρ; quadrature=...)`.
 """
-function preallocate_model(system::SCFTSystem, ρ; quadrature::Symbol=:trapz)
+function _preallocate_model_scft_common(system::SCFTSystem, ρ; quadrature::Symbol=:trapz)
     nd  = dimension(system)
     nspecies = length(system.model.groups.flattenedgroups)
     dz  = structure_dz(system.structure)
@@ -335,6 +335,34 @@ function preallocate_model(system::SCFTSystem, ρ; quadrature::Symbol=:trapz)
     inv_exp_field = [similar(selectdim(w_new, nd+1, 1)) for _ in 1:nspecies]
 
     return (; w_new, weights, V_eff, w_bulk, scratch, exp_field, inv_exp_field)
+end
+
+function preallocate_model(system::SCFTSystem, ρ; quadrature::Symbol=:trapz)
+    return _preallocate_model_scft_common(system, ρ; quadrature=quadrature)
+end
+
+"""
+    preallocate_model(system::SCFTWLCSystem, ρ; quadrature::Symbol=:trapz)
+
+`WLCPropagator`-specific extension of `preallocate_model(system::SCFTSystem, ...)`
+(reused verbatim via `_preallocate_model_scft_common`, avoiding self-recursion): same
+buffers, plus the Maier-Saupe orientation-moment tensor state `R_tensor`/`R_tensor_new`
+(shape `(ngrid...,nspecies,6)`, `compute_orientation_moments`, `src/models/SCFT/scft.jl`)
+and a precomputed `maier_saupe_active` flag (`true` iff `system.model.params.nu` has
+any nonzero entry) so `converge!`/`get_new_profile!` can skip all Maier-Saupe work
+(field construction, extra `free_energy` terms) when `nu` is entirely zero, exactly
+reproducing pre-Maier-Saupe behavior at zero extra propagator cost.
+"""
+function preallocate_model(system::SCFTWLCSystem, ρ; quadrature::Symbol=:trapz)
+    base = _preallocate_model_scft_common(system, ρ; quadrature=quadrature)
+    nspecies = length(system.model.groups.flattenedgroups)
+    ngrid = system.structure.ngrid
+    FT = eltype(ρ)
+    nu = system.model.params.nu.values
+    maier_saupe_active = any(!=(zero(eltype(nu))), nu)
+    R_tensor     = zeros(FT, ngrid..., nspecies, 6)
+    R_tensor_new = zeros(FT, ngrid..., nspecies, 6)
+    return (; base..., R_tensor, R_tensor_new, maier_saupe_active)
 end
 
 function length_scales(model::EoSModel)

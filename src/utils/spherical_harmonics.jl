@@ -277,6 +277,21 @@ function _orientation_marginalize(qslice::AbstractArray, quad_weight::AbstractVe
 end
 
 """
+    _Q_PAIRS, _Q_PAIR_WEIGHT
+
+The 6 independent components of a traceless symmetric 3×3 tensor `Q_ab` (`a≤b`), used
+wherever a full nematic order-parameter tensor `Q_ab(r) = (3⟨u_a u_b⟩ - δ_ab)/2` (rather
+than `orientation_order_parameter`'s single-axis scalar reduction) is needed — e.g. for
+a Maier-Saupe mean field. `_Q_PAIR_WEIGHT[j]` is the multiplicity pair `j` carries in a
+full double-sum contraction `A:B = Σ_{a,b=1}^3 A_ab B_ab`: off-diagonal pairs occur twice
+(once as `(a,b)`, once as `(b,a)`) since both `Q_ab` and any tensor it contracts against
+here are symmetric, so `A:B = Σ_j _Q_PAIR_WEIGHT[j] * A[j] * B[j]` over just the 6 stored
+components.
+"""
+const _Q_PAIRS = ((1, 1), (2, 2), (3, 3), (1, 2), (1, 3), (2, 3))
+const _Q_PAIR_WEIGHT = (1, 1, 1, 2, 2, 2)
+
+"""
     bending_eigenvalues(κ::Real, L_max::Int) -> Vector{Float64}
 
 Spherical-harmonic-degree eigenvalues `κ̂_l` (`l=0:L_max`, 1-indexed as `κ̂[l+1]`) of the

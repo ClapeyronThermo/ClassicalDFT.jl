@@ -352,14 +352,25 @@ function propagate!(system, propagator::WLCPropagator, ρ, δfδρ_res, q_in, q_
 end
 
 """
-    propagate!(system::SCFTSystem, ρ, w, cache_propagator; w_bulk, exp_field=nothing)
+    propagate!(system::SCFTSystem, ρ, w, cache_propagator; w_bulk, exp_field=nothing, maier_saupe_field=nothing)
 
 WLC analogue of `DiscreteGaussianChainPropagator`'s SCFT `propagate!`: runs
 `_wlc_linear_sweep!` for every chain using shifted fields
 `ef(α) = exp(w_bulk[α] - w_α)`.
+
+`maier_saupe_field`, when not `nothing`, is a `Vector` indexed by species — same
+indexing convention as `exp_field`/`inv_exp_field` (a `Vector` of arrays, not a single
+array with a species dimension) — where `maier_saupe_field[α]` has shape
+`(ngrid..., n_orient)`: the orientation-*dependent* mean-field contribution
+`w_MS,α(r,u)` (`compute_maier_saupe_field`, `src/models/SCFT/scft.jl`) that a
+position-only field cannot represent. It multiplies into `ef(α)` as an extra
+`exp(-w_MS,α(r,u))` factor; `_wlc_linear_sweep!` needs no changes at all to consume
+this — `ef(α)`'s result is already broadcast against `(ngrid...,n_orient)`-shaped
+buffers there regardless of whether `ef(α)` itself is position-only or also carries an
+orientation axis (Julia broadcasting treats a missing trailing dimension as size 1).
 """
 function propagate!(system::SCFTSystem, ρ, w, cache_propagator::NamedTuple;
-                    w_bulk, exp_field=nothing)
+                    w_bulk, exp_field=nothing, maier_saupe_field=nothing)
     (; q_in, q_out, buf_r, buf_c, child_buf, qgrid_buf, qlm_buf, P, iP) = cache_propagator
     nd = dimension(system)
     propagator = system.propagator
@@ -367,8 +378,10 @@ function propagate!(system::SCFTSystem, ρ, w, cache_propagator::NamedTuple;
     sequence = species.sequence
     nchains = length(sequence)
 
-    ef(α) = exp_field !== nothing ? exp_field[α] :
-                exp.(w_bulk[α] .- selectdim(w, nd + 1, α))
+    base_ef(α) = exp_field !== nothing ? exp_field[α] :
+                     exp.(w_bulk[α] .- selectdim(w, nd + 1, α))
+    ef(α) = maier_saupe_field === nothing ? base_ef(α) :
+                base_ef(α) .* exp.(.-maier_saupe_field[α])
 
     for c in 1:nchains
         seg_spec = sequence[c]

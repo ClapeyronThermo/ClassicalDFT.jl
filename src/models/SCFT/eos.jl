@@ -62,15 +62,25 @@ export SCFTLatticeFluid
   (`src/utils/spherical_harmonics.jl`) by `WLCPropagator`.
 - `chi`: pairwise Flory interaction parameter, symmetric with zero diagonal, indexed by
   species — identical role to `SCFTLatticeFluidParam.chi`.
+- `nu`: pairwise Maier-Saupe orientational coupling strength, symmetric, indexed by
+  species (unlike `chi`, a nonzero diagonal `nu[α,α]` is physically meaningful — it's a
+  species' self-alignment coupling, not an inter-species contact penalty). Zero by
+  default (no orientational interaction) — see `compute_maier_saupe_field`,
+  `src/models/SCFT/scft.jl`, for how it enters the WLC mean field, and
+  `/Users/pierrewalker/.claude/plans/radiant-brewing-sprout.md` for the full
+  derivation/sign convention (`nu=5` is the isotropic-nematic linear instability
+  threshold for an isolated, homogeneous, self-coupled species — the same `ν*=5`
+  the classical bulk Maier-Saupe self-consistency equation gives).
 """
 struct SCFTWormLikeChainFluidParam <: EoSParam
     b::SingleParam{Float64}
     lp::SingleParam{Float64}
     chi::PairParam{Float64}
+    nu::PairParam{Float64}
 end
 
 """
-    SCFTWormLikeChainFluid(grouplist, b, lp, chi; rho0, kappa, L_max=8, idealmodel=BasicIdeal, references=String[])
+    SCFTWormLikeChainFluid(grouplist, b, lp, chi; rho0, kappa, nu=nothing, L_max=8, idealmodel=BasicIdeal, references=String[])
 
 A compressible Flory-Huggins-Helfand lattice-fluid `EoSModel` for SCFT bulk
 thermodynamics, for discrete worm-like-chain (bead-rod/Kratky-Porod) species — the
@@ -105,12 +115,16 @@ struct SCFTWormLikeChainFluid{I<:IdealModel} <: SCFTLatticeFluidModel
 end
 
 function SCFTWormLikeChainFluid(grouplist, b::AbstractVector, lp::AbstractVector, chi::AbstractMatrix;
-                                 rho0::Real, kappa::Real, L_max::Int=8, idealmodel = BasicIdeal, references = String[])
+                                 rho0::Real, kappa::Real, nu::Union{AbstractMatrix,Nothing}=nothing,
+                                 L_max::Int=8, idealmodel = BasicIdeal, references = String[])
     groups = GroupParam(grouplist)
+    nspecies = length(groups.flattenedgroups)
+    nu_vals = nu === nothing ? zeros(nspecies, nspecies) : nu
     params = SCFTWormLikeChainFluidParam(
         SingleParam("b", groups.flattenedgroups, Float64.(b)),
         SingleParam("lp", groups.flattenedgroups, Float64.(lp)),
-        PairParam("chi", groups.flattenedgroups, Float64.(chi)))
+        PairParam("chi", groups.flattenedgroups, Float64.(chi)),
+        PairParam("nu", groups.flattenedgroups, Float64.(nu_vals)))
     ideal = init_model(idealmodel, groups.components, String[], false)
     return SCFTWormLikeChainFluid(groups.components, groups, params, Float64(rho0), Float64(kappa), L_max, ideal, references)
 end
