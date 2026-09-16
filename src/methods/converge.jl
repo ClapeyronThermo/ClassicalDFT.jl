@@ -332,12 +332,18 @@ Given the current mean-field potential `w`:
 - evaluate the new field guess `caches.w_new` from that density.
 
 `caches` is a named tuple of buffers preallocated once outside the iteration loop:
-`w_new, w_bulk, dz, cache_external, q_in, q_out, buf_r, buf_c, child_buf, P, iP, weights, V_eff, exp_field, inv_exp_field, scratch`.
+`w_new, w_bulk, dz, cache_external, cache_propagator, weights, V_eff, exp_field,
+inv_exp_field, scratch`. `cache_propagator` is threaded through opaquely (whatever shape
+`preallocate_propagator` returned for `system.propagator`'s concrete type — a positional
+`Tuple` for `DiscreteGaussianChainPropagator`, a `NamedTuple` for `WLCPropagator`) and
+`q_in`/`q_out` are fetched from it via the generic `cache_q_in`/`cache_q_out` accessors
+(`src/propagator/propagator.jl`) rather than by destructuring named fields, so this loop
+doesn't need to know which propagator's cache shape it's holding.
 
 Returns `Q` (one partition function per molecule type).
 """
 function get_new_profile!(system::SCFTSystem, ρ, w, caches)
-    (; w_new, w_bulk, dz, cache_external, q_in, q_out, buf_r, buf_c, child_buf, P, iP,
+    (; w_new, w_bulk, dz, cache_external, cache_propagator,
        weights, V_eff, exp_field, inv_exp_field, scratch) = caches
     nd = dimension(system)
     FT = eltype(ρ)
@@ -350,9 +356,10 @@ function get_new_profile!(system::SCFTSystem, ρ, w, caches)
         @. inv_exp_field[α] = one(FT) / exp_field[α]
     end
 
-    cache_propagator = (q_in, q_out, buf_r, buf_c, child_buf, P, iP)
     propagate!(system, ρ, w, cache_propagator;
               w_bulk=w_bulk, exp_field=exp_field)
+    q_in = cache_q_in(cache_propagator)
+    q_out = cache_q_out(cache_propagator)
     Q = compute_partition_functions(system, w, w_bulk, q_in, dz;
                                weights=weights, V_eff=V_eff, exp_field=exp_field)
     compute_densities!(system, w, w_bulk, q_in, q_out, Q, ρ;
@@ -379,13 +386,13 @@ function converge!(prob::SCFTProblem{S}, method::AASol, ρ::AbstractArray) where
     # since it's a solve-time choice, not a system invariant.
     w, cache_model, cache_external, cache_propagator = preallocate(system, ρ; quadrature = prob.quadrature)
     (; w_new, weights, V_eff, w_bulk, scratch, exp_field, inv_exp_field) = cache_model
-    q_in, q_out, buf_r, buf_c, child_buf, P, iP = cache_propagator
 
     compute_fields!(system, ρ, w; scratch = scratch)
 
     # Bundle the buffers preallocated above into a single cache passed to
-    # get_new_profile! every iteration.
-    caches = (; w_new, w_bulk, dz, cache_external, q_in, q_out, buf_r, buf_c, child_buf, P, iP,
+    # get_new_profile! every iteration. cache_propagator is kept opaque (see
+    # get_new_profile!'s docstring) rather than destructured here.
+    caches = (; w_new, w_bulk, dz, cache_external, cache_propagator,
               weights, V_eff, exp_field, inv_exp_field, scratch)
 
     iter_count = Ref(0)

@@ -398,4 +398,72 @@ end
         @test all(x -> isapprox(x, bulk[1]; rtol=1e-6), ρ[:, 1])
         @test isapprox(bulk[1], rho0; rtol=1e-6)
     end
+
+    # WLC (discrete worm-like-chain) SCFT integration tests. See test_wlc.jl for
+    # propagator-level (SHT/bending-kernel/FRC-formula) unit tests kept independent of
+    # the full SCFT machinery; these exercise the full
+    # preallocate_propagator -> propagate! -> compute_partition_functions ->
+    # compute_densities! -> converge.jl pipeline for `SCFTWormLikeChainFluid`/
+    # `WLCPropagator`, which needs a 3D structure (orientation is inherently 3D).
+    @testset "WLC: rejects branched chains" begin
+        model = ClassicalDFT.SCFTWormLikeChainFluid([("rod", ["A"=>4])], [1.0], [3.0], zeros(1,1);
+                                                      rho0=1.0, kappa=20.0)
+        structure = ClassicalDFT.Uniform3DCart((0.0, 0.0), [1.0], [-8.0 8.0; -8.0 8.0; -8.0 8.0], (8,8,8))
+        branched = Dict("rod" => ClassicalDFT.custom_structure("A(AA)A"))
+        @test_throws ErrorException ClassicalDFT.SCFTSystem(model, structure, ClassicalDFT.DFTOptions();
+            mol_structure=branched, ensemble=[:canonical], n_molecules=[16.0])
+    end
+
+    @testset "WLC: uniform melt is a fixed point of converge! (Q~1, F~0)" begin
+        N = 6
+        rho0 = 1.0
+        model = ClassicalDFT.SCFTWormLikeChainFluid([("rod", ["A"=>N])], [1.0], [3.0], zeros(1,1);
+                                                      rho0=rho0, kappa=20.0)
+        mol_structure = Dict("rod" => ClassicalDFT.custom_structure("A"^N))
+        L = 10.0
+        structure = ClassicalDFT.Uniform3DCart((0.0, 0.0), [rho0], [0.0 L; 0.0 L; 0.0 L], (12,12,12))
+        n_chains = (L^3 * rho0) / N
+        system = ClassicalDFT.SCFTSystem(model, structure, ClassicalDFT.DFTOptions();
+            mol_structure=mol_structure, ensemble=[:canonical], n_molecules=[n_chains])
+
+        ρ = ClassicalDFT.initialize_profiles(system)
+        ClassicalDFT.converge!(system, ρ; verbose=false, tol=1e-8, maxit=5)
+        ρtot = dropdims(sum(ρ, dims=4); dims=4)
+        @test isapprox(minimum(ρtot), rho0; atol=1e-6)
+        @test isapprox(maximum(ρtot), rho0; atol=1e-6)
+
+        w_bulk = ClassicalDFT.compute_bulk_fields(system.model, ClassicalDFT.compute_bulk_densities(system))
+        w = zeros(size(ρ)...)
+        ClassicalDFT.compute_fields!(system, ρ, w)
+        dz = ClassicalDFT.structure_dz(system.structure)
+        cache_propagator = ClassicalDFT.preallocate_propagator(system, system.propagator, ρ, CPU())
+        ClassicalDFT.propagate!(system, ρ, w, cache_propagator; w_bulk=w_bulk)
+        q_in = ClassicalDFT.cache_q_in(cache_propagator)
+        Q = ClassicalDFT.compute_partition_functions(system, w, w_bulk, q_in, dz)
+        @test isapprox(Q[1], 1.0; atol=1e-4)
+
+        H = ClassicalDFT.free_energy(system, ρ, w, Q)
+        @test isapprox(H, 0.0; atol=1e-6)
+    end
+
+    @testset "WLC: perturbed diblock relaxes back to uniform (weak chi, below ordering)" begin
+        N = 6
+        rho0 = 1.0
+        model = ClassicalDFT.SCFTWormLikeChainFluid([("rod", ["A"=>N, "B"=>N])], [1.0, 1.0], [3.0, 3.0],
+                                                      [0.0 0.5; 0.5 0.0]; rho0=rho0, kappa=20.0)
+        mol_structure = Dict("rod" => ClassicalDFT.custom_structure("A"^N * "B"^N))
+        L = 12.0
+        structure = ClassicalDFT.Uniform3DCart((0.0, 0.0), [rho0], [0.0 L; 0.0 L; 0.0 L], (12,12,12))
+        n_chains = (L^3 * rho0) / (2N)
+        system = ClassicalDFT.SCFTSystem(model, structure, ClassicalDFT.DFTOptions();
+            mol_structure=mol_structure, ensemble=[:canonical], n_molecules=[n_chains])
+
+        ρ = ClassicalDFT.initialize_profiles(system; noise=0.05)
+        ClassicalDFT.converge!(system, ρ; verbose=false, tol=1e-6, maxit=150)
+        ρtot = dropdims(sum(ρ, dims=4); dims=4)
+
+        @test !any(isnan, ρ)
+        @test isapprox(minimum(ρtot), rho0; atol=1e-3)
+        @test isapprox(maximum(ρtot), rho0; atol=1e-3)
+    end
 end

@@ -190,6 +190,110 @@ function compute_densities!(system::SCFTSystem, w, w_bulk, q_in, q_out, Q, ρ;
 end
 
 """
+    SCFTWLCSystem
+
+Type alias for `SCFTSystem{<:EoSModel,<:DFTSpecies,<:DFTStructure,<:WLCPropagator,
+<:DFTOptions,<:Any}` — an `SCFTSystem` using the discrete worm-like-chain propagator.
+Used purely to give `compute_partition_functions`/`compute_densities!` a more specific
+method that Julia's dispatch prefers automatically over the generic `system::SCFTSystem`
+methods above, leaving those completely untouched for
+`DiscreteGaussianChainPropagator`/`IdealPropagator` systems.
+
+Written with the inline `<:X` syntax rather than an explicit `where {M,S,T,P<:...,O,EF}`
+clause deliberately — the latter is NOT more specific than `system::SCFTSystem` in
+Julia's dispatch (confirmed by direct testing) once the constrained parameter
+(`WLCPropagator`) is itself a parametric type, since the two `where`-quantified
+UnionAlls' relative specificity is compared structurally and the named-typevar form
+doesn't register as strictly narrower; the `<:X` sugar desugars to fresh, unnamed type
+variables that compare correctly instead.
+"""
+const SCFTWLCSystem = SCFTSystem{<:EoSModel,<:DFTSpecies,<:DFTStructure,<:WLCPropagator,<:DFTOptions,<:Any}
+
+"""
+    compute_partition_functions(system::SCFTWLCSystem, w, w_bulk, q_in, dz)
+
+`WLCPropagator` analogue of `compute_partition_functions(system::SCFTSystem, ...)`.
+`q_in[c]` carries an extra orientation axis (shape `(ngrid..., n_orient, N_c)`, see
+`WLCPropagator`'s docstring), so `Q̃_c = (1/V_eff) ∫dr ∫du q̃_in(r,u,N_c)` needs an
+orientation-quadrature-weighted sum (`_orientation_marginalize`,
+`src/utils/spherical_harmonics.jl`) before the usual spatial integral — valid here
+(unlike the density formula below) since only one `q` is being integrated, not a product
+of two. `N_c` (not `chain_root`'s tree-root convention) is the right node to evaluate at:
+v1 has no branching, so `q_in[c]`'s bottom-up sweep (`_wlc_linear_sweep!`) already ends at
+the last chain position, not an internal tree root.
+"""
+function compute_partition_functions(system::SCFTWLCSystem, w, w_bulk, q_in, dz;
+                                     weights=nothing, V_eff=nothing, exp_field=nothing)
+    nd = dimension(system)
+    species = system.species
+    nmol = length(species.sequence)
+    FT = fptype(system.options)
+    quad_weight = system.propagator.sht.quad_weight
+
+    V_eff = V_eff !== nothing ? FT(V_eff) : FT(effective_volume(system, dz))
+
+    Q = Vector{FT}(undef, nmol)
+    for c in 1:nmol
+        Nc = length(species.sequence[c])
+        q_end = selectdim(q_in[c], nd + 2, Nc)
+        q_marg = _orientation_marginalize(q_end, quad_weight, nd + 1)
+        if weights !== nothing
+            Q[c] = sum(q_marg .* weights) / V_eff
+        else
+            Q[c] = sum(q_marg) * prod(dz) / V_eff
+        end
+    end
+
+    return Q
+end
+
+"""
+    compute_densities!(system::SCFTWLCSystem, w, w_bulk, q_in, q_out, Q, ρ)
+
+`WLCPropagator` analogue of `compute_densities!(system::SCFTSystem, ...)`. The crucial
+difference from the marginalize-then-use pattern above: `q_in(r,u,k)·q_out(r,u,k)` must
+be multiplied elementwise *before* the orientation contraction — `∫du q_in·q_out ≠
+(∫du q_in)(∫du q_out)` — so this multiplies the two orientation-resolved slices first,
+contracts the orientation axis (`_orientation_marginalize`), and only then accumulates
+the (now purely positional) result into `ρ`, mirroring the generic method's spatial-only
+accumulation loop exactly.
+"""
+function compute_densities!(system::SCFTWLCSystem, w, w_bulk, q_in, q_out, Q, ρ;
+                            V_eff=nothing, exp_field=nothing, inv_exp_field=nothing)
+    nd = dimension(system)
+    species = system.species
+    nmol = length(species.sequence)
+    dz = structure_dz(system.structure)
+    FT = eltype(ρ)
+    quad_weight = system.propagator.sht.quad_weight
+
+    V_eff = V_eff !== nothing ? FT(V_eff) : FT(effective_volume(system, dz))
+
+    ρ .= zero(FT)
+
+    for c in 1:nmol
+        seg_spec = species.sequence[c]
+        Nc = length(seg_spec)
+        Qc = Q[c]
+
+        if species.ensemble[c] == :canonical
+            prefactor = FT(species.n_molecules[c]) / (V_eff * Qc)
+        else
+            prefactor = FT(species.molecule_bulk_density[c]) / (FT(Nc) * Qc)
+        end
+
+        for k in 1:Nc
+            α = seg_spec[k]
+            inv_ef_α = inv_exp_field !== nothing ? inv_exp_field[α] :
+                           exp.(selectdim(w, nd + 1, α) .- w_bulk[α])
+            qq = selectdim(q_in[c], nd + 2, k) .* selectdim(q_out[c], nd + 2, k)
+            qq_marg = _orientation_marginalize(qq, quad_weight, nd + 1)
+            selectdim(ρ, nd + 1, α) .+= prefactor .* qq_marg .* inv_ef_α
+        end
+    end
+end
+
+"""
     free_energy(system::SCFTSystem, ρ, w, Q)
 
 Compute the SCFT free energy (mean-field Hamiltonian):
