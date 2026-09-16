@@ -263,17 +263,36 @@ Bending combines over the *previous* bond direction `u'` with the kernel `K(u,u'
 fixed `r`, producing an intermediate function still indexed by `u` (the *new*, k-1↔k
 bond's direction); translation then shifts each `u`-slice of that intermediate by that
 same `u`'s own displacement `b_bond·u`, because node `k`'s position is node `(k-1)`'s
-position plus the `(k-1,k)` bond vector `b_bond·u`. (Swapping the order — translating
-first by the *previous* node's orientation, then bending — would shift by the wrong
-node's direction; see `WLCPropagator`'s docstring.)
+position plus the `(k-1,k)` bond vector `b_bond·u`. This works because `u` (the label
+`q_in[k]` is indexed by, `(k-1,k)`'s direction) is *both* the thing bending correlates
+against *and* the thing that determines the translation shift — the same bond plays
+both roles.
 
-Top-down mirrors this with the bond direction reversed: `q_out[k]` looks toward node
-`k+1`, which sits at `r + b_bond·u` (not `r - b_bond·u`), so its translation uses the
-*conjugate* kernel:
+For `q_out`, that is no longer true, and the step order must **reverse**: `q_out[k]` is
+indexed by the *same* bond `(k-1,k)`'s direction `u` — not `(k,k+1)`'s — because
+`compute_densities!` multiplies `q_in(r,u,k)·q_out(r,u,k)` under a *single* shared `u`,
+so both factors must be talking about the same physical bond. But the shift from node
+`k` to node `k+1` is determined by bond `(k,k+1)`'s direction `u'` — the variable
+`q_out[k+1]`'s bending kernel `K(u,u')` sums over, not the output label `u`. So each
+`u'`-slice of `q_out[k+1]` must be translated by `b_bond·u'` (its *own* direction) FIRST,
+and only THEN combined across `u'` via the bending kernel to produce the `u`-indexed
+result:
 ```
 q_out[N_c](r,u) = ef(α(N_c))
-q_out[k](r,u)   = ef(α(k)) · translate_{-b_bond·u}( bend(q_out[k+1](·,u)) )(r,u)     (k < N_c)
+q_out[k](r,u)   = ef(α(k)) · bend( translate_{-b_bond·u'}(q_out[k+1](·,u')) )(r,u)   (k < N_c)
 ```
+(the translation is still by `-b_bond·u'`/the conjugate kernel, since node `k` sits at
+`r`, so node `k+1` — where `q_out[k+1]` lives — is at `r+b_bond·u'`, the same direction
+argument `WLCPropagator`'s docstring gives; only the *order* relative to bending flips
+relative to `q_in`, not the kernel itself). Getting this order backwards (bending before
+translating, mirroring `q_in`'s order) silently breaks the exact per-node partition-
+function identity `Q = (1/V)∫dr∫du q_in(r,u,k)q_out(r,u,k)·exp(Δw_{α(k)})` for any `k`
+involving at least one bend step (`N_c ≥ 3`) — it is *not* caught by a zero/uniform field
+(where every intermediate is constant in `u`, and the two orders coincide trivially), only
+by a genuinely position-varying field, which is why this needs an explicit, non-uniform-
+field mass-conservation test (`test/test_wlc.jl`) rather than the uniform-melt fixed-point
+check alone.
+
 Each of `q_in[k]`/`q_out[k]` carries exactly one factor of `ef(α(k))` — the same
 double-counting convention `_dgc_tree_sweep!` uses, corrected downstream via
 `exp(Δw_α)` in `compute_densities!`.
@@ -296,8 +315,8 @@ function _wlc_linear_sweep!(q_in_c, q_out_c, buf_r, buf_c, child_buf, qgrid_buf,
     for k in (Nc-1):-1:1
         bond_key = minmax(seg_spec[k], seg_spec[k+1])
         nxt = selectdim(q_out_c, nd + 2, k + 1)
-        wlc_bend!(child_buf, nxt, propagator.bend_eig[bond_key], sht, qlm_buf, nd)
-        wlc_translate!(qgrid_buf, child_buf, propagator.trans_kernel_conj[bond_key], buf_r, buf_c, P, iP, nd)
+        wlc_translate!(child_buf, nxt, propagator.trans_kernel_conj[bond_key], buf_r, buf_c, P, iP, nd)
+        wlc_bend!(qgrid_buf, child_buf, propagator.bend_eig[bond_key], sht, qlm_buf, nd)
         selectdim(q_out_c, nd + 2, k) .= ef(seg_spec[k]) .* qgrid_buf
     end
     return nothing
