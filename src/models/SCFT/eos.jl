@@ -70,7 +70,7 @@ struct SCFTWormLikeChainFluidParam <: EoSParam
 end
 
 """
-    SCFTWormLikeChainFluid(grouplist, b, lp, chi; rho0, kappa, idealmodel=BasicIdeal, references=String[])
+    SCFTWormLikeChainFluid(grouplist, b, lp, chi; rho0, kappa, L_max=8, idealmodel=BasicIdeal, references=String[])
 
 A compressible Flory-Huggins-Helfand lattice-fluid `EoSModel` for SCFT bulk
 thermodynamics, for discrete worm-like-chain (bead-rod/Kratky-Porod) species — the
@@ -78,7 +78,16 @@ thermodynamics, for discrete worm-like-chain (bead-rod/Kratky-Porod) species —
 [`DiscreteGaussianChainPropagator`](@ref). See `SCFTLatticeFluid`'s docstring for the
 shared conventions (`grouplist` format, `a_res`'s meaning, why it omits chain
 translational/mixing entropy); this type only differs in swapping the Gaussian
-statistical segment length `b` for a bond length `b` plus persistence length `lp`.
+statistical segment length `b` for a bond length `b` plus persistence length `lp`, and in
+carrying `L_max` (the spherical-harmonic truncation degree forwarded to
+`WLCPropagator`/`SHTPlan` — see their docstrings). Larger `L_max` resolves stiffer
+species (larger `κ_α = lp_α/b_α`) more accurately but costs more per SCFT iteration
+(`n_orient = (L_max+1)(2L_max+1)` orientation-grid nodes, each needing its own FFT
+convolution in the propagator's translation step) — pick the smallest `L_max` that
+resolves your stiffest species' `bending_eigenvalues` decay (check
+`model.params.lp.values ./ model.params.b.values` against a plot of
+`bending_eigenvalues(κ, L_max)` before committing to a large, slow `L_max` for
+production runs).
 
 Mixing worm-like-chain bonds with discrete-Gaussian-chain bonds in the same chain (e.g. a
 rod-coil block copolymer) is not supported — every bond in every molecule type built from
@@ -90,19 +99,20 @@ struct SCFTWormLikeChainFluid{I<:IdealModel} <: SCFTLatticeFluidModel
     params::SCFTWormLikeChainFluidParam
     rho0::Float64
     kappa::Float64
+    L_max::Int
     idealmodel::I
     references::Vector{String}
 end
 
 function SCFTWormLikeChainFluid(grouplist, b::AbstractVector, lp::AbstractVector, chi::AbstractMatrix;
-                                 rho0::Real, kappa::Real, idealmodel = BasicIdeal, references = String[])
+                                 rho0::Real, kappa::Real, L_max::Int=8, idealmodel = BasicIdeal, references = String[])
     groups = GroupParam(grouplist)
     params = SCFTWormLikeChainFluidParam(
         SingleParam("b", groups.flattenedgroups, Float64.(b)),
         SingleParam("lp", groups.flattenedgroups, Float64.(lp)),
         PairParam("chi", groups.flattenedgroups, Float64.(chi)))
     ideal = init_model(idealmodel, groups.components, String[], false)
-    return SCFTWormLikeChainFluid(groups.components, groups, params, Float64(rho0), Float64(kappa), ideal, references)
+    return SCFTWormLikeChainFluid(groups.components, groups, params, Float64(rho0), Float64(kappa), L_max, ideal, references)
 end
 export SCFTWormLikeChainFluid
 
@@ -295,7 +305,7 @@ function expand_model(model::SCFTWormLikeChainFluid, mol_structure::Dict{String,
     expanded_groups, ngroups_k = expand_groups(model, mol_structure)
     expanded_params = expand_params(model.params, expanded_groups, nothing, ngroups_k)
     return SCFTWormLikeChainFluid(expanded_groups.components, expanded_groups, expanded_params,
-                                   model.rho0, model.kappa, model.idealmodel, model.references)
+                                   model.rho0, model.kappa, model.L_max, model.idealmodel, model.references)
 end
 
 """
@@ -375,7 +385,7 @@ model uses.
 =#
 function get_propagator(model::SCFTWormLikeChainFluid, species::SCFTSpecies, structure::DFTStructure,
                          backend::Backend, ::Type{FP}=Float64) where FP<:AbstractFloat
-    return WLCPropagator(model, species, structure, backend, FP)
+    return WLCPropagator(model, species, structure, backend, FP; L_max=model.L_max)
 end
 
 function a_res(model::SCFTLatticeFluidModel, V, T, z)

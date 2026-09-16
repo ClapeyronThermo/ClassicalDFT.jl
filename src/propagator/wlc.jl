@@ -26,9 +26,17 @@ FP)` constructor signature every `DFTPropagator` uses.
 `κ_α = lp_α/b_α`. For a junction bond `(α,β)`, `b_bond = sqrt((b_α²+b_β²)/2)` (matching
 `DiscreteGaussianChainPropagator`'s convention) and `κ_bond = sqrt((κ_α²+κ_β²)/2)`.
 
-Requires `dimension(structure) == 3` — orientation is inherently a 3-component unit
-vector, and v1 does not address how it would project onto a reduced-dimensionality
-domain — and every chain in `species.sequence` must be linear: node `a` and `b` (in
+Supports `dimension(structure) ∈ {1,2,3}` — orientation `u` is always a full 3-component
+unit vector (tracked via `sht`/spherical harmonics regardless of the spatial grid's own
+dimensionality), but the *translation* step only uses `u`'s first `nd` Cartesian
+components (`sht.u_nodes[1:nd, i]`) when building `trans_kernel`, since a structure with
+`dimension(structure) = nd < 3` is implicitly translationally invariant along the
+remaining `3-nd` directions (e.g. a 1D structure resolves density along `x` only,
+treating the system as uniform in `y,z`) — a bond's `y`/`z` displacement doesn't change
+an `x`-only density, so it is correctly not tracked, while bending (which correlates the
+*full* 3D orientation between consecutive bonds) is entirely unaffected by `nd` and
+always uses the complete `u`. Every chain in `species.sequence` must be linear: node `a`
+and `b` (in
 `species.sequence[c]`'s own order, which SCFT's `expand_groups` already builds in exact
 chain-position order — *not* `species.levels`'s BFS-depth-from-highest-degree-root
 labeling, which is unrelated to chain position and generally is not `1:N_c` even for an
@@ -50,9 +58,9 @@ function WLCPropagator(
     L_max::Int=8
 ) where FP<:AbstractFloat
     nd = dimension(structure)
-    nd == 3 || error(
-        "WLCPropagator only supports 3D spatial domains (dimension(structure) == 3) — " *
-        "orientation is inherently a 3-component unit vector; got dimension(structure) = $nd."
+    nd in (1, 2, 3) || error(
+        "WLCPropagator only supports 1D, 2D, or 3D spatial domains — got " *
+        "dimension(structure) = $nd."
     )
 
     segment_species = species.sequence

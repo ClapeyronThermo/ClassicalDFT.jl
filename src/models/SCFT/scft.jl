@@ -294,6 +294,63 @@ function compute_densities!(system::SCFTWLCSystem, w, w_bulk, q_in, q_out, Q, ρ
 end
 
 """
+    orientation_order_parameter(system::SCFTWLCSystem, q_in, q_out; axis::Int=1)
+
+Local nematic order parameter `S_α(r) = (3⟨u_axis²⟩_α(r) - 1)/2` for each WLC species
+`α`, where `⟨u_axis²⟩_α(r)` is the orientation-grid average of `u_axis²` weighted by the
+local (un-normalized) orientational distribution `ψ_α(r,u) = Σ_{k:α(k)=α} q_in(r,u,k)
+q_out(r,u,k)` — the same per-node product `compute_densities!` integrates over
+orientation to build `ρ`, here kept resolved in `u` instead. `axis` selects which
+Cartesian component of `u` (1=x, 2=y, 3=z) to measure alignment against — for a 1D/2D
+structure, `axis` should be one of the *tracked* spatial dimensions
+(`1:dimension(system)`) to ask "are bonds preferentially aligned along the
+density-varying direction?", since `WLCPropagator` supports `dimension(structure) ∈
+{1,2,3}` with orientation always tracked in full 3D (see `WLCPropagator`'s docstring).
+
+`S=1`: bonds fully aligned along `axis`. `S=-1/2`: fully perpendicular (isotropic in the
+plane normal to `axis`). `S=0`: isotropic in all directions — e.g. what every
+`DiscreteGaussianChainPropagator` chain has, having no orientation to align in the first
+place. The double-counted field factor `exp(Δw_α)` that `compute_densities!` divides out
+when building `ρ` is a per-position scalar independent of `u`, so it cancels exactly in
+this ratio and is not needed here.
+
+Returns an `Array` of shape `(ngrid..., nspecies)`, matching `ρ`'s own shape convention.
+Positions where a species' local density is exactly zero return `S=0` (rather than
+`NaN`) since there is no orientation distribution to speak of there.
+"""
+function orientation_order_parameter(system::SCFTWLCSystem, q_in, q_out; axis::Int=1)
+    nd = dimension(system)
+    species = system.species
+    nspecies = length(system.model.groups.flattenedgroups)
+    sht = system.propagator.sht
+    quad_weight = sht.quad_weight
+    u_axis2 = sht.u_nodes[axis, :] .^ 2
+    FT = eltype(q_in[1])
+
+    ngrid = system.structure.ngrid
+    S = zeros(FT, ngrid..., nspecies)
+
+    for α in 1:nspecies
+        numer = nothing
+        denom = nothing
+        for c in eachindex(species.sequence)
+            seg_spec = species.sequence[c]
+            for k in findall(==(α), seg_spec)
+                qq = selectdim(q_in[c], nd + 2, k) .* selectdim(q_out[c], nd + 2, k)
+                d_c = _orientation_marginalize(qq, quad_weight, nd + 1)
+                n_c = _orientation_marginalize(qq, quad_weight .* u_axis2, nd + 1)
+                denom = denom === nothing ? d_c : denom .+ d_c
+                numer = numer === nothing ? n_c : numer .+ n_c
+            end
+        end
+        denom === nothing && continue  # species α not present in any chain
+        mean_u_axis2 = numer ./ max.(denom, eps(FT))
+        selectdim(S, nd + 1, α) .= (3 .* mean_u_axis2 .- 1) ./ 2
+    end
+    return S
+end
+
+"""
     free_energy(system::SCFTSystem, ρ, w, Q)
 
 Compute the SCFT free energy (mean-field Hamiltonian):

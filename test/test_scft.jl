@@ -466,4 +466,30 @@ end
         @test isapprox(minimum(ρtot), rho0; atol=1e-3)
         @test isapprox(maximum(ρtot), rho0; atol=1e-3)
     end
+
+    @testset "WLC: orientation_order_parameter is ~0 in an isotropic uniform melt" begin
+        # A uniform (Delta w=0) melt has no preferred bond direction anywhere -- the
+        # local orientational distribution q_in(r,u,k)*q_out(r,u,k) is exactly isotropic
+        # in u, so S_alpha(r) should vanish (up to floating-point error) everywhere.
+        N = 6
+        model = ClassicalDFT.SCFTWormLikeChainFluid([("rod", ["A"=>N])], [1.0], [3.0], zeros(1,1);
+                                                      rho0=1.0, kappa=20.0)
+        mol_structure = Dict("rod" => ClassicalDFT.custom_structure("A"^N))
+        structure = ClassicalDFT.Uniform1DCart((0.0, 0.0), [1.0], [0.0, 20.0], 48)
+        system = ClassicalDFT.SCFTSystem(model, structure, ClassicalDFT.DFTOptions();
+            mol_structure=mol_structure, ensemble=[:canonical], n_molecules=[20.0/N])
+
+        ρ = ClassicalDFT.initialize_profiles(system)
+        w = zeros(size(ρ)...)
+        w_bulk = ClassicalDFT.compute_bulk_fields(system.model, ClassicalDFT.compute_bulk_densities(system))
+        cache_propagator = ClassicalDFT.preallocate_propagator(system, system.propagator, ρ, CPU())
+        ClassicalDFT.propagate!(system, ρ, w, cache_propagator; w_bulk=w_bulk)
+        q_in = ClassicalDFT.cache_q_in(cache_propagator)
+        q_out = ClassicalDFT.cache_q_out(cache_propagator)
+
+        for axis in 1:3
+            S = ClassicalDFT.orientation_order_parameter(system, q_in, q_out; axis=axis)
+            @test all(x -> isapprox(x, 0.0; atol=1e-10), S)
+        end
+    end
 end

@@ -228,4 +228,81 @@ end
     end
 end
 
+@testset "1D/2D translationally-invariant reduction" begin
+    # WLCPropagator supports dimension(structure) in {1,2,3} (orientation is always
+    # tracked in full 3D via SHT; only the translation step's kernel uses the first `nd`
+    # Cartesian components of u). By isotropy, the nd-dimensional tracked-position
+    # mean-squared displacement should equal exactly (nd/3) of the full 3D <R^2>.
+    function run_chain_nd(b, κ, N, L_max, nx, nd)
+        ngrid = ntuple(_ -> nx, nd)
+        rfft_ngrid = (nx ÷ 2 + 1, ngrid[2:end]...)
+        νall = ntuple(nd) do i
+            v = i == 1 ? FFTW.rfftfreq(nx, 1.0) : FFTW.fftfreq(nx, 1.0)
+            reshape(v, ntuple(d -> d == i ? rfft_ngrid[d] : 1, nd))
+        end
+
+        sht = ClassicalDFT.SHTPlan(L_max)
+        n_orient = sht.n_theta * sht.n_phi
+        CT = ComplexF64
+        phase = zeros(CT, rfft_ngrid..., n_orient)
+        for i in 1:n_orient
+            d = b .* @view sht.u_nodes[:, i]
+            arg = zeros(Float64, rfft_ngrid...)
+            for dim in 1:nd
+                arg = arg .+ νall[dim] .* d[dim]
+            end
+            selectdim(phase, nd+1, i) .= CT.(exp.(2*pi*im .* arg))
+        end
+        bend_eig = ClassicalDFT.expand_eig_to_lm(ClassicalDFT.bending_eigenvalues(κ, L_max), sht)
+
+        buf_r = zeros(Float64, ngrid...)
+        buf_c = zeros(ComplexF64, rfft_ngrid...)
+        qlm_buf = zeros(Float64, ngrid..., sht.nlm)
+        P = FFTW.plan_rfft(buf_r, 1:nd)
+        iP = FFTW.plan_irfft(buf_c, ngrid[1], 1:nd)
+
+        c0 = nx ÷ 2 + 1
+        q1 = zeros(Float64, ngrid..., n_orient)
+        idx = ntuple(_ -> c0, nd)
+        q1[idx..., :] .= 1.0
+        qcur = q1
+        for k in 2:N
+            bend_buf = similar(qcur)
+            ClassicalDFT.wlc_bend!(bend_buf, qcur, bend_eig, sht, qlm_buf, nd)
+            trans_buf = similar(qcur)
+            ClassicalDFT.wlc_translate!(trans_buf, bend_buf, phase, buf_r, buf_c, P, iP, nd)
+            qcur = trans_buf
+        end
+
+        rho = ClassicalDFT._orientation_marginalize(qcur, sht.quad_weight, nd + 1)
+        total = sum(rho)
+
+        coord(i) = (i - c0) <= nx÷2 ? Float64(i - c0) : Float64(i - c0 - nx)
+        R2 = 0.0
+        for ci in CartesianIndices(ngrid)
+            k = Tuple(ci)
+            r2 = sum(coord(k[d])^2 for d in 1:nd)
+            R2 += r2 * rho[ci]
+        end
+        return R2 / total
+    end
+
+    b, κ, N, L_max, nx = 1.0, 2.0, 8, 14, 48
+    R2_3d = frc_exact(b, κ, N, L_max)
+    R2_1d = run_chain_nd(b, κ, N, L_max, nx, 1)
+    @test isapprox(R2_1d, R2_3d/3; rtol=0.02)
+    R2_2d = run_chain_nd(b, κ, N, L_max, nx, 2)
+    @test isapprox(R2_2d, 2*R2_3d/3; rtol=0.02)
+end
+
+@testset "SCFTWormLikeChainFluid: L_max is user-configurable" begin
+    model = ClassicalDFT.SCFTWormLikeChainFluid([("rod", ["A"=>4])], [1.0], [3.0], zeros(1,1);
+                                                 rho0=1.0, kappa=20.0, L_max=5)
+    mol_structure = Dict("rod" => ClassicalDFT.custom_structure("A"^4))
+    structure = ClassicalDFT.Uniform1DCart((0.0, 0.0), [1.0], [0.0, 16.0], 32)
+    system = ClassicalDFT.SCFTSystem(model, structure, ClassicalDFT.DFTOptions();
+        mol_structure=mol_structure, ensemble=[:canonical], n_molecules=[4.0])
+    @test system.propagator.sht.L_max == 5
+end
+
 end # testset "WLC"
