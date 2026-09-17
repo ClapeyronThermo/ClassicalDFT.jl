@@ -108,7 +108,7 @@ function get_connectivity(model::EoSModel, name::String)
     =#
     try
         smiles_str = Clapeyron.SMILES(name)[1]
-        if !isempty(smiles)
+        if !isempty(smiles_str)
             return get_connectivity(model,smiles(smiles_str))
         end
     catch e
