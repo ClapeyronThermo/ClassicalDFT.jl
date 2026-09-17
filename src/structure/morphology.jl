@@ -36,7 +36,18 @@ function lamellar_ψ(structure)
     coords, Ls = _morph_coords(structure)
     X, Lx = coords[1], Ls[1]
     n = structure.topology.periods
-    return @. cos(2π*n*X/Lx)
+    f = structure.topology.core_fraction
+    # A core-domain plateau (ψ=+1) of width f*period, centered on X=0 (mod period, matching
+    # the old cos(2π*n*X/Lx)'s peak location), and a matrix plateau (ψ=-1) of width
+    # (1-f)*period filling the rest -- at f=0.5 this is the same 50/50 split the plain
+    # cosine gave, just as a step rather than a smooth ramp. A single global sinusoid can't
+    # do this: reparametrizing its phase only moves where it crosses zero relative to the
+    # segment BOUNDARIES, not the width of the positive region, since any point-symmetric
+    # +1->-1 ramp crosses zero at its own segment's midpoint regardless of that segment's
+    # width. This is only a seed for the SCFT iteration to relax from, so the discontinuity
+    # here is harmless.
+    q = @. mod(n*X/Lx + f/2, 1.0)
+    return @. ifelse(q < f, 1.0, -1.0)
 end
 
 function hex_ψ(structure)
