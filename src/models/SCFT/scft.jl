@@ -401,6 +401,48 @@ function compute_orientation_tensor(system::SCFTWLCSystem, q_in, q_out)
 end
 
 """
+    mean_orientation_field(system::SCFTWLCSystem, q_in, q_out)
+
+Local polar orientation vector `⟨u⟩^α(r) = ∫dΩ u ψ_α(r,u) / ∫dΩ ψ_α(r,u)` for each WLC
+species `α`, where `ψ_α(r,u) = Σ_{k:α(k)=α} q_in(r,u,k) q_out(r,u,k)` is the same local
+orientation weight [`orientation_order_parameter`](@ref)/[`compute_orientation_tensor`](@ref)
+build their (even-in-`u`) moments from — this is the odd (first) moment instead, a true
+*polar* vector: unlike the nematic order parameter `S`/`Q_ab` (which is nonzero for any
+head-tail-symmetric alignment, `u` and `-u` equally likely), `⟨u⟩` is only nonzero when
+there is a genuine directional bias, e.g. from a chain's own head-tail asymmetry (a rod
+covalently bonded to a coil at one specific end) — it is *not* generally a unit vector:
+`|⟨u⟩^α(r)| ≤ 1`, with `1` meaning every chain agrees on the exact same direction at `r`
+and `0` meaning no net directional preference at all (though still possibly nematically
+ordered, `S≠0`, if `u`/`-u` are equally likely but perpendicular directions are not).
+
+A species present in no chain at all gets `⟨u⟩=0` everywhere (matching
+`orientation_order_parameter`'s analogous convention), as does any position where that
+species' local density is exactly zero.
+
+Returns shape `(ngrid..., nspecies, 3)` — the trailing 3 is always the full Cartesian
+`(u_x,u_y,u_z)` triple regardless of `dimension(system)`, matching `WLCPropagator`'s own
+"orientation is always tracked in full 3D" convention (see its docstring).
+"""
+function mean_orientation_field(system::SCFTWLCSystem, q_in, q_out)
+    nd = dimension(system)
+    FT = eltype(q_in[1])
+    u_nodes = system.propagator.sht.u_nodes
+    weights = permutedims(u_nodes, (2, 1))   # (n_orient, 3): linear in u, not u_a*u_b
+    numer, denom, species_present = _orientation_second_moments(system, q_in, q_out, weights)
+    denom_safe = max.(denom, eps(FT))
+
+    mean_u = zeros(FT, size(numer)...)
+    for α in 1:length(species_present)
+        species_present[α] || continue
+        for a in 1:3
+            selectdim(selectdim(mean_u, nd + 2, a), nd + 1, α) .=
+                selectdim(selectdim(numer, nd + 2, a), nd + 1, α) ./ selectdim(denom_safe, nd + 1, α)
+        end
+    end
+    return mean_u
+end
+
+"""
     compute_orientation_moments(system::SCFTWLCSystem, w, w_bulk, q_in, q_out, Q; V_eff=nothing, inv_exp_field=nothing, maier_saupe_field=nothing)
 
 Density-normalized orientation second moment

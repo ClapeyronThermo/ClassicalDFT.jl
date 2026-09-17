@@ -31,6 +31,7 @@ using StaticArrays
 using KernelAbstractions, Adapt, Enzyme
 using Hankel
 using SpecialFunctions
+using Random
 
 include("base/base.jl")
 
@@ -59,6 +60,7 @@ include("methods/converge.jl")
 include("methods/surface_tension.jl")
 include("methods/interfacial_tension.jl")
 include("methods/adsorption.jl")
+include("methods/chain_sampling.jl")
 
 export MolStructure, SMILESStructure, CustomStructure, smiles, custom_structure
 

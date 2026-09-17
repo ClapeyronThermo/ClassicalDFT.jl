@@ -27,6 +27,7 @@ remotes = Dict(
         "Group-Contribution & Heterosegmented Chains" => "tutorials/group_contribution_chains.md",
         "Copolymer Microphase Morphologies" => "tutorials/copolymer_morphology.md",
         "Self-Consistent Field Theory" => "tutorials/scft.md",
+        "Worm-Like Chains & Orientational Order" => "tutorials/wlc.md",
         "Electrolytes" => "tutorials/electrolytes.md",
         "Dynamic DFT" => "tutorials/dynamic_dft.md",
         "GPU Acceleration" => "tutorials/gpu_acceleration.md",
