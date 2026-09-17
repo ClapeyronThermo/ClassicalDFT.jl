@@ -173,7 +173,7 @@ ln(ρi) = ln(ρi_bulk) + β(μi_res - δFδρ_res)
 
 On SCFT systems, the mean-field potential `w` is iterated instead, and the the density is calculated as a function of `w`.
 
-If only keyword arguments are used, then the problem is solved via the Anderson acceleration routine [aasol](@ref)), The rest of keyword arguments are passed to [`cDFTProblem`](@ref)
+If only keyword arguments are used, then the problem is solved via the Anderson acceleration routine [`aasol`](@ref). The rest of keyword arguments are passed to [`cDFTProblem`](@ref)
 
 ## Anderson arguments
 - `maxit::Int`: Maximum Anderson-phase iterations (also used as the Picard-phase cap, since the Picard phase is expected to exit via `anderson_start` well before either cap in practice).
