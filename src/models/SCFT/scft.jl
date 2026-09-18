@@ -182,7 +182,7 @@ function compute_densities!(system::SCFTSystem, w, w_bulk, q_in, q_out, Q, ρ;
         for k in 1:Nc
             α = seg_spec[k]
             inv_ef_α = inv_exp_field !== nothing ? inv_exp_field[α] :
-                           exp.(selectdim(w, nd+1, α) .- w_bulk[α])
+                           exp.(selectdim(w, nd+1, α) .- FT(w_bulk[α]))
             selectdim(ρ, nd+1, α) .+= prefactor .* selectdim(q_in[c], nd+1, k) .*
                 selectdim(q_out[c], nd+1, k) .* inv_ef_α
         end
@@ -299,7 +299,7 @@ function compute_densities!(system::SCFTWLCSystem, w, w_bulk, q_in, q_out, Q, ρ
             α = seg_spec[k]
             qq = selectdim(q_in[c], nd + 2, k) .* selectdim(q_out[c], nd + 2, k)
             base_inv_ef_α = inv_exp_field !== nothing ? inv_exp_field[α] :
-                                exp.(selectdim(w, nd + 1, α) .- w_bulk[α])
+                                exp.(selectdim(w, nd + 1, α) .- FT(w_bulk[α]))
             if maier_saupe_field === nothing
                 qq_marg = _orientation_marginalize(qq, quad_weight, nd + 1)
                 selectdim(ρ, nd + 1, α) .+= prefactor .* qq_marg .* base_inv_ef_α
@@ -340,8 +340,10 @@ function _orientation_second_moments(system::SCFTWLCSystem, q_in, q_out, weights
     FT = eltype(q_in[1])
     ngrid = system.structure.ngrid
 
-    numer = zeros(FT, ngrid..., nspecies, n_weight)
-    denom = zeros(FT, ngrid..., nspecies)
+    numer = similar(q_in[1], FT, ngrid..., nspecies, n_weight)
+    denom = similar(q_in[1], FT, ngrid..., nspecies)
+    numer .= 0
+    denom .= 0
     species_present = falses(nspecies)
     qw_weights = quad_weight .* weights
 
@@ -387,7 +389,8 @@ function compute_orientation_tensor(system::SCFTWLCSystem, q_in, q_out)
     numer, denom, species_present = _orientation_second_moments(system, q_in, q_out, weights)
     denom_safe = max.(denom, eps(FT))
 
-    Q = zeros(FT, size(numer)...)
+    Q = similar(numer)
+    Q .= 0
     for (j, (a, b)) in enumerate(_Q_PAIRS)
         δab = a == b ? one(FT) : zero(FT)
         Q_j = selectdim(Q, nd + 2, j)
@@ -431,7 +434,8 @@ function mean_orientation_field(system::SCFTWLCSystem, q_in, q_out)
     numer, denom, species_present = _orientation_second_moments(system, q_in, q_out, weights)
     denom_safe = max.(denom, eps(FT))
 
-    mean_u = zeros(FT, size(numer)...)
+    mean_u = similar(numer)
+    mean_u .= 0
     for α in 1:length(species_present)
         species_present[α] || continue
         for a in 1:3
@@ -489,7 +493,8 @@ function compute_orientation_moments(system::SCFTWLCSystem, w, w_bulk, q_in, q_o
     weights = reduce(hcat, (u_nodes[a, :] .* u_nodes[b, :] for (a, b) in _Q_PAIRS))
     qw_weights = quad_weight .* weights
 
-    R = zeros(FT, ngrid..., nspecies, 6)
+    R = similar(q_in[1], FT, ngrid..., nspecies, 6)
+    R .= 0
 
     for c in 1:nmol
         seg_spec = species.sequence[c]
@@ -503,7 +508,7 @@ function compute_orientation_moments(system::SCFTWLCSystem, w, w_bulk, q_in, q_o
             α = seg_spec[k]
             qq = selectdim(q_in[c], nd + 2, k) .* selectdim(q_out[c], nd + 2, k)
             base_inv_ef_α = inv_exp_field !== nothing ? inv_exp_field[α] :
-                                exp.(selectdim(w, nd + 1, α) .- w_bulk[α])
+                                exp.(selectdim(w, nd + 1, α) .- FT(w_bulk[α]))
             if maier_saupe_field === nothing
                 for j in 1:6
                     Rj_α = selectdim(selectdim(R, nd + 2, j), nd + 1, α)
@@ -555,9 +560,11 @@ function compute_maier_saupe_field(system::SCFTWLCSystem, R_tensor)
     ngrid = system.structure.ngrid
     prefactor = FT(3) / (FT(2) * rho0)
 
-    result = Vector{Array{FT,length(ngrid) + 1}}(undef, nspecies)
+    WT = typeof(similar(u_nodes, FT, ngrid..., n_orient))
+    result = Vector{WT}(undef, nspecies)
     for α in 1:nspecies
-        wα = zeros(FT, ngrid..., n_orient)
+        wα = similar(u_nodes, FT, ngrid..., n_orient)
+        wα .= 0
         for β in 1:nspecies
             nu[α, β] == zero(FT) && continue
             Rβ = selectdim(R_tensor, nd + 1, β)
@@ -606,7 +613,8 @@ function orientation_order_parameter(system::SCFTWLCSystem, q_in, q_out; axis::I
     numer_flat = dropdims(numer; dims=nd + 2)
     denom_safe = max.(denom, eps(FT))
 
-    S = zeros(FT, size(numer_flat)...)
+    S = similar(numer_flat)
+    S .= 0
     for α in 1:length(species_present)
         species_present[α] || continue
         mean_u_axis2 = selectdim(numer_flat, nd + 1, α) ./ selectdim(denom_safe, nd + 1, α)

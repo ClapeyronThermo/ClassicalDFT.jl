@@ -352,7 +352,8 @@ function get_new_profile!(system::SCFTSystem, ρ, w, caches)
     # compute_partition_functions, and compute_densities! below.
     for α in eachindex(exp_field)
         w_α = selectdim(w, nd+1, α)
-        @. exp_field[α]     = exp(w_bulk[α] - w_α)
+        w_bulk_α = FT(w_bulk[α])
+        @. exp_field[α]     = exp(w_bulk_α - w_α)
         @. inv_exp_field[α] = one(FT) / exp_field[α]
     end
 
@@ -447,7 +448,8 @@ function get_new_profile!(system::SCFTWLCSystem, ρ, w, R_tensor, R_tensor_new, 
 
     for α in eachindex(exp_field)
         w_α = selectdim(w, nd + 1, α)
-        @. exp_field[α]     = exp(w_bulk[α] - w_α)
+        w_bulk_α = FT(w_bulk[α])
+        @. exp_field[α]     = exp(w_bulk_α - w_α)
         @. inv_exp_field[α] = one(FT) / exp_field[α]
     end
 

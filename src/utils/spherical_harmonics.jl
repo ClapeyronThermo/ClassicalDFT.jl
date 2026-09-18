@@ -115,17 +115,18 @@ needs to apply a bending kernel that is diagonal in spherical-harmonic degree `l
   `q_{l,m}`/`q_{l,-m}` for `l = m:L_max` — laid out contiguously so a batched matmul's
   output can be written directly into `qlm_flat[:, cos_range[m+1]]` with no scatter.
 """
-struct SHTPlan{FP<:AbstractFloat}
+struct SHTPlan{FP<:AbstractFloat, VT<:AbstractVector{FP}, MT<:AbstractMatrix{FP},
+               PVT<:AbstractVector{<:AbstractMatrix{FP}}}
     L_max::Int
     n_theta::Int
     n_phi::Int
-    cosθ::Vector{FP}
-    gl_weight::Vector{FP}
-    φ::Vector{FP}
-    u_nodes::Matrix{FP}
-    quad_weight::Vector{FP}
-    Plm_fwd::Vector{Matrix{FP}}
-    Plm_inv::Vector{Matrix{FP}}
+    cosθ::VT
+    gl_weight::VT
+    φ::VT
+    u_nodes::MT
+    quad_weight::VT
+    Plm_fwd::PVT
+    Plm_inv::PVT
     nlm::Int
     cos_range::Vector{UnitRange{Int}}
     sin_range::Vector{UnitRange{Int}}
@@ -188,8 +189,38 @@ function SHTPlan(L_max::Int, ::Type{FP}=Float64) where FP<:AbstractFloat
         quad_weight[idxu] = w[jθ] * dφ
     end
 
-    return SHTPlan{FP}(L_max, n_theta, n_phi, x, w, φ, u_nodes, quad_weight,
-                        Plm_fwd, Plm_inv, nlm, cos_range, sin_range)
+    return SHTPlan(L_max, n_theta, n_phi, x, w, φ, u_nodes, quad_weight,
+                   Plm_fwd, Plm_inv, nlm, cos_range, sin_range)
+end
+
+"""
+    Adapt.adapt_structure(to, sht::SHTPlan)
+
+Moves every quadrature/transform-table array field of `sht` onto `to` (e.g.
+`CUDABackend()`/`MetalBackend()`). Used once, by `WLCPropagator`'s constructor, after all
+CPU-side setup that reads `sht.u_nodes` etc. as plain host arrays has finished.
+
+`Plm_fwd`/`Plm_inv` are `Vector{<:AbstractMatrix}` — a plain Julia `Vector` of small
+matrices, not one big array — so each inner matrix is adapted individually; a bare
+`Adapt.adapt(to, sht.Plm_fwd)` would instead try to move the *outer* `Vector` itself
+(whose element type is not `isbits`), which is not what's wanted. `cos_range`/`sin_range`
+are deliberately left untouched: they hold plain host `UnitRange{Int}` index ranges used
+only to build `view`s (`sht.cos_range[m+1]`) from host loops in `sht_forward!`/
+`sht_inverse!`, and must stay CPU-resident so indexing them never triggers disallowed GPU
+scalar indexing.
+"""
+function Adapt.adapt_structure(to, sht::SHTPlan)
+    return SHTPlan(
+        sht.L_max, sht.n_theta, sht.n_phi,
+        Adapt.adapt(to, sht.cosθ),
+        Adapt.adapt(to, sht.gl_weight),
+        Adapt.adapt(to, sht.φ),
+        Adapt.adapt(to, sht.u_nodes),
+        Adapt.adapt(to, sht.quad_weight),
+        [Adapt.adapt(to, m) for m in sht.Plm_fwd],
+        [Adapt.adapt(to, m) for m in sht.Plm_inv],
+        sht.nlm, sht.cos_range, sht.sin_range,
+    )
 end
 
 """
@@ -244,7 +275,7 @@ function sht_inverse!(q_grid::AbstractArray{FP}, qlm::AbstractArray{FP}, sht::SH
     qlm_flat = reshape(qlm, Nsp, sht.nlm)
     nfreq = sht.L_max + 1
 
-    C = zeros(Complex{FP}, spatial_size..., sht.n_theta, nfreq)
+    C = similar(qlm, Complex{FP}, spatial_size..., sht.n_theta, nfreq)
     Cflat = reshape(C, Nsp, sht.n_theta, nfreq)
 
     Ccos0 = qlm_flat[:, sht.cos_range[1]] * sht.Plm_inv[1]'
@@ -253,7 +284,7 @@ function sht_inverse!(q_grid::AbstractArray{FP}, qlm::AbstractArray{FP}, sht::SH
     for m in 1:sht.L_max
         Ccos = qlm_flat[:, sht.cos_range[m+1]] * sht.Plm_inv[m+1]'
         Csin = qlm_flat[:, sht.sin_range[m]] * sht.Plm_inv[m+1]'
-        Cflat[:, :, m+1] .= (sht.n_phi / 2) .* (Ccos .- im .* Csin)
+        Cflat[:, :, m+1] .= (FP(sht.n_phi) / 2) .* (Ccos .- im .* Csin)
     end
 
     qg = irfft(C, sht.n_phi, nd + 2)

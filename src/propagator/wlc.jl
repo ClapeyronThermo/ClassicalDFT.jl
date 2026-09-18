@@ -165,6 +165,8 @@ function WLCPropagator(
         device_bend_eig[key] = Adapt.adapt(device, k)
     end
 
+    sht = Adapt.adapt(device, sht)
+
     return WLCPropagator(sht, device_trans_kernel, device_trans_kernel_conj, device_bend_eig)
 end
 
@@ -312,8 +314,9 @@ function _wlc_linear_sweep!(q_in_c, q_out_c, buf_r, buf_c, child_buf, qgrid_buf,
                              propagator, seg_spec, ef, nd)
     Nc = length(seg_spec)
     sht = propagator.sht
+    FT = eltype(q_in_c)
 
-    selectdim(q_in_c, nd + 2, 1) .= ef(seg_spec[1]) ./ (4 * pi)
+    selectdim(q_in_c, nd + 2, 1) .= ef(seg_spec[1]) ./ (4 * FT(pi))
     for k in 2:Nc
         bond_key = minmax(seg_spec[k-1], seg_spec[k])
         prev = selectdim(q_in_c, nd + 2, k - 1)
@@ -384,13 +387,14 @@ function propagate!(system::SCFTSystem, ρ, w, cache_propagator::NamedTuple;
                     w_bulk, exp_field=nothing, maier_saupe_field=nothing)
     (; q_in, q_out, buf_r, buf_c, child_buf, qgrid_buf, qlm_buf, P, iP) = cache_propagator
     nd = dimension(system)
+    FT = eltype(w)
     propagator = system.propagator
     species = system.species
     sequence = species.sequence
     nchains = length(sequence)
 
     base_ef(α) = exp_field !== nothing ? exp_field[α] :
-                     exp.(w_bulk[α] .- selectdim(w, nd + 1, α))
+                     exp.(FT(w_bulk[α]) .- selectdim(w, nd + 1, α))
     ef(α) = maier_saupe_field === nothing ? base_ef(α) :
                 base_ef(α) .* exp.(.-maier_saupe_field[α])
 
