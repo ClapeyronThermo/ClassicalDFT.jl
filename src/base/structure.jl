@@ -637,6 +637,12 @@ Fields:
 - `core_groups::Vector{String}` : names of the groups that form the minority (core) domains.
 - `amplitude::Float64`          : initial seeding amplitude.
 - `periods::Int`                : number of unit cells tiled in each dimension.
+- `core_fraction::Float64`      : fraction of each period's width occupied by the core
+  domain (`:Lamellar` only — ignored by the other morphologies, whose unit cells aren't
+  parameterized by a single width fraction). Default `0.5` (equal-width layers, matching
+  the previous fixed behavior). Set this to the core block's own composition fraction
+  (e.g. `N_core/(N_core+N_matrix)`) to seed layers already close to their expected
+  equilibrium width, rather than assuming a 50/50 split regardless of composition.
 
 Constructors such as [`LamellarStack1DCart`](@ref), [`HexLattice2DCart`](@ref), [`BCC3DCart`](@ref), etc. return a [`Structure`](@ref) with this `topology`.
 """
@@ -644,17 +650,19 @@ struct BlockCopolymerMorphology{T} <: DFTTopology
     core_groups::Vector{String}
     amplitude::Float64
     periods::Int
+    core_fraction::Float64
 
-    function BlockCopolymerMorphology{T}(core_groups::Vector{String},amplitude::Float64,periods::Int) where T
+    function BlockCopolymerMorphology{T}(core_groups::Vector{String},amplitude::Float64,periods::Int,core_fraction::Float64=0.5) where T
         periods >= 1 || throw(ArgumentError("periods must be a positive integer, got $periods"))
-        return new{T}(core_groups,amplitude,periods)
+        0.0 < core_fraction < 1.0 || throw(ArgumentError("core_fraction must be strictly between 0 and 1, got $core_fraction"))
+        return new{T}(core_groups,amplitude,periods,core_fraction)
     end
 end
 
 Base.show(io::IO,top::BlockCopolymerMorphology) = Clapeyron.show_as_namedtuple(io,top)
 
 """
-    LamellarStack1DCart(conditions, ρbulk, bounds, ngrid; core_groups, amplitude=0.3, periods=1)
+    LamellarStack1DCart(conditions, ρbulk, bounds, ngrid; core_groups, amplitude=0.3, periods=1, core_fraction=0.5)
 
 Seed a periodic lamellar (alternating‑layer) block‑copolymer morphology in 1D Cartesian coordinates.
 core_groups` enrich in one set of layers; all other groups form the alternating layers.
@@ -669,6 +677,11 @@ Returns a [`Structure`](@ref) with `Dim = 1`, `Coord = Cartesian`, and `topology
 - `core_groups::Vector{String}`        : Group names for the core layers.
 - `amplitude::Float64`                 : Seeding amplitude (default `0.3`).
 - `periods::Int`                       : Number of lamellar periods seeded initially across the box (default `1`).
+- `core_fraction::Float64`             : Fraction of each period's width given to the core
+  layer (default `0.5`, equal-width layers). Set to the core block's own composition
+  fraction (e.g. `N_core/(N_core+N_matrix)`) to seed a layer width already close to what
+  strong-segregation theory expects, instead of assuming an even split regardless of the
+  actual block-length asymmetry.
 
 # Example
 ```julia
@@ -676,13 +689,13 @@ julia> struct = LamellarStack1DCart((p, T), [0.1], [-10.0, 10.0], 201;
                                     core_groups=["A"], amplitude=0.4, periods=2)
 ```
 """
-function LamellarStack1DCart(conditions,ρbulk,bounds,ngrid; core_groups, amplitude=0.3, periods=1)
-    lam = BlockCopolymerMorphology{:Lamellar}(core_groups,amplitude,periods)
+function LamellarStack1DCart(conditions,ρbulk,bounds,ngrid; core_groups, amplitude=0.3, periods=1, core_fraction=0.5)
+    lam = BlockCopolymerMorphology{:Lamellar}(core_groups,amplitude,periods,core_fraction)
     Structure{1,Cartesian}(conditions,ρbulk,bounds,ngrid,lam)
 end
 
 """
-    LamellarStack2DCart(conditions, ρbulk, bounds, ngrid; core_groups, amplitude=0.3, periods=1)
+    LamellarStack2DCart(conditions, ρbulk, bounds, ngrid; core_groups, amplitude=0.3, periods=1, core_fraction=0.5)
 
 2D Cartesian counterpart of [`LamellarStack1DCart`](@ref). Layers alternate along the first dimension and are uniform along the second.
 
@@ -696,14 +709,15 @@ Returns a [`Structure`](@ref) with `Dim = 2`, `Coord = Cartesian`, and `topology
 - `core_groups::Vector{String}`        : Group names for the core layers.
 - `amplitude::Float64`                 : Seeding amplitude (default `0.3`).
 - `periods::Int`                       : Number of lamellar periods seeded initially along the first dimension (default `1`).
+- `core_fraction::Float64`             : Fraction of each period's width given to the core layer (default `0.5`) — see [`LamellarStack1DCart`](@ref).
 """
-function LamellarStack2DCart(conditions, ρbulk, bounds, ngrid; core_groups, amplitude=0.3, periods=1)
-    lam = BlockCopolymerMorphology{:Lamellar}(core_groups,amplitude,periods)
+function LamellarStack2DCart(conditions, ρbulk, bounds, ngrid; core_groups, amplitude=0.3, periods=1, core_fraction=0.5)
+    lam = BlockCopolymerMorphology{:Lamellar}(core_groups,amplitude,periods,core_fraction)
     Structure{2,Cartesian}(conditions,ρbulk,bounds,ngrid,lam)
 end
 
 """
-    LamellarStack3DCart(conditions, ρbulk, bounds, ngrid; core_groups, amplitude=0.3, periods=1)
+    LamellarStack3DCart(conditions, ρbulk, bounds, ngrid; core_groups, amplitude=0.3, periods=1, core_fraction=0.5)
 
 3D Cartesian counterpart of [`LamellarStack1DCart`](@ref). Layers alternate along the first dimension and are uniform along the other two.
 
@@ -717,9 +731,10 @@ Returns a [`Structure`](@ref) with `Dim = 3`, `Coord = Cartesian`, and `topology
 - `core_groups::Vector{String}`       : Group names for the core layers.
 - `amplitude::Float64`                : Seeding amplitude (default `0.3`).
 - `periods::Int`                      : Number of lamellar periods seeded initially along the first dimension (default `1`).
+- `core_fraction::Float64`            : Fraction of each period's width given to the core layer (default `0.5`) — see [`LamellarStack1DCart`](@ref).
 """
-function LamellarStack3DCart(conditions, ρbulk, bounds, ngrid; core_groups, amplitude=0.3, periods=1)
-    lam = BlockCopolymerMorphology{:Lamellar}(core_groups,amplitude,periods)
+function LamellarStack3DCart(conditions, ρbulk, bounds, ngrid; core_groups, amplitude=0.3, periods=1, core_fraction=0.5)
+    lam = BlockCopolymerMorphology{:Lamellar}(core_groups,amplitude,periods,core_fraction)
     Structure{3,Cartesian}(conditions,ρbulk,bounds,ngrid,lam)
 end
 

@@ -287,6 +287,7 @@ function propagate!(system::SCFTSystem, ρ, w, cache_propagator;
                     w_bulk, exp_field=nothing)
     q_in, q_out, buf_r, buf_c, child_buf, P, iP = cache_propagator
     nd = dimension(system)
+    FT = eltype(w)
     propagator = system.propagator
     species = system.species
     sequence = species.sequence
@@ -295,7 +296,7 @@ function propagate!(system::SCFTSystem, ρ, w, cache_propagator;
     # Helper: return precomputed exp_field[α] if available, else compute on the fly.
     # exp_field[α] = exp(w_bulk[α] - w_α(r))
     ef(α) = exp_field !== nothing ? exp_field[α] :
-                exp.(w_bulk[α] .- selectdim(w, nd+1, α))
+                exp.(FT(w_bulk[α]) .- selectdim(w, nd+1, α))
 
     for c in 1:nchains
         seg_spec = sequence[c]

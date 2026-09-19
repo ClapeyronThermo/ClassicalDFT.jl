@@ -52,6 +52,32 @@
         check_morphology(DFTSystem(model, structure))
     end
 
+    @testset "LamellarStack1DCart core_fraction" begin
+        @test_throws ArgumentError ClassicalDFT.LamellarStack1DCart((p,T), ρbulk, [0.0, 10L], 401; core_groups=core, core_fraction=0.0)
+        @test_throws ArgumentError ClassicalDFT.LamellarStack1DCart((p,T), ρbulk, [0.0, 10L], 401; core_groups=core, core_fraction=1.0)
+
+        group_letters = first.(split.(model.groups.flattenedgroups, "_"))
+        core_idx = findfirst(l -> l in core, group_letters)
+        matrix_idx = findfirst(l -> !(l in core), group_letters)
+
+        ngrid = 401
+        Lbox = 10L
+        f = 0.3
+        structure = ClassicalDFT.LamellarStack1DCart((p,T), ρbulk, [0.0, Lbox], ngrid; core_groups=core, core_fraction=f)
+        ρ = ClassicalDFT.initialize_profiles(DFTSystem(model, structure))
+        core_prof = selectdim(ρ, 2, core_idx)
+        matrix_prof = selectdim(ρ, 2, matrix_idx)
+        frac_core = count(>(0), core_prof .- matrix_prof) / ngrid
+        @test isapprox(frac_core, f; atol=2/ngrid + 0.02)
+
+        # omitting core_fraction is exactly equivalent to core_fraction=0.5 (unchanged default)
+        structure_default = ClassicalDFT.LamellarStack1DCart((p,T), ρbulk, [0.0, Lbox], ngrid; core_groups=core)
+        structure_half = ClassicalDFT.LamellarStack1DCart((p,T), ρbulk, [0.0, Lbox], ngrid; core_groups=core, core_fraction=0.5)
+        ρ_default = ClassicalDFT.initialize_profiles(DFTSystem(model, structure_default))
+        ρ_half = ClassicalDFT.initialize_profiles(DFTSystem(model, structure_half))
+        @test ρ_default == ρ_half
+    end
+
     @testset "HexLattice2DCart" begin
         Lx = 5L
         bounds = [-Lx Lx; -sqrt(3)*Lx sqrt(3)*Lx]

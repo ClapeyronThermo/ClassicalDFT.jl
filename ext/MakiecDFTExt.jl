@@ -504,4 +504,129 @@ function Makie.plot(system::Union{ClassicalDFT.DFTSystem,ClassicalDFT.DGTSystem,
     return Makie.FigureAxisPlot(fig, ax, plt)
 end
 
+# --- orientation-field / sampled-chain-conformation plots (WLC only) ------------------
+
+# Grid coordinate vectors on structure's own native periodic grid (dz=(ub-lb)/ngrid,
+# NOT (ub-lb)/(ngrid-1) -- see periodic_interp's docstring), one per dimension.
+function _native_grid(structure::ClassicalDFT.DFTStructure)
+    nd = ClassicalDFT.dimension(structure)
+    dz = ClassicalDFT.structure_dz(structure)
+    ngrid = structure.ngrid
+    return ntuple(nd) do d
+        lo = ClassicalDFT.bounds(structure, d)[1]
+        [lo + (i - 1) * dz[d] for i in 1:ngrid[d]]
+    end
+end
+
+# Tile a periodic ngrid[1]-length (1D) or ngrid[1]xngrid[2] (2D) field/coord set just far
+# enough to cover [lo,hi] in every dimension -- how far a set of sampled chains (which,
+# unlike a density profile, can legitimately wander outside the structure's own box)
+# actually reaches, rather than clipping or guessing a fixed tile count.
+function _tile_to_cover(coords_native::Vector{Float64}, L::Real, lo::Real, hi::Real)
+    t_lo, t_hi = floor(Int, lo / L), ceil(Int, hi / L)
+    return vcat([coords_native .+ t * L for t in t_lo:t_hi]...), t_lo, t_hi
+end
+
+"""
+    ClassicalDFT.plot_orientation_field(system::ClassicalDFT.SCFTWLCSystem, ρ, q_in, q_out;
+                                         species=1, chain=1, colormap=:RdBu, arrow_step=3,
+                                         arrow_scale=2.0, font=nothing, width=:single,
+                                         dpi=ClassicalDFT.CDFT_DPI)
+
+Plot `species`'s density profile (from `ρ`) with [`mean_orientation_field`](@ref)'s
+`⟨u⟩(r)` overlaid as an arrow map, for `dimension(system) ∈ {1,2}`. For 1D, arrows are
+drawn along the (only) tracked axis at a fixed height, matching this package's own
+`Makie.plot(system, profiles)` convention for the density panel above them; for 2D, the
+density is a heatmap and arrows are subsampled every `arrow_step`-th grid point in each
+direction.
+"""
+function ClassicalDFT.plot_orientation_field(system::ClassicalDFT.SCFTWLCSystem, ρ, q_in, q_out;
+                                               species::Int=1, chain::Int=1, colormap=:RdBu,
+                                               arrow_step::Int=3, arrow_scale::Real=2.0,
+                                               font=nothing, width::Symbol=:single, dpi::Real=ClassicalDFT.CDFT_DPI)
+    nd = ClassicalDFT.dimension(system)
+    nd in (1, 2) || error("plot_orientation_field only supports dimension(system) ∈ {1,2}, got $nd")
+    structure = system.structure
+    mean_u = ClassicalDFT.mean_orientation_field(system, q_in, q_out)
+    coords = _native_grid(structure)
+    species_name = system.model.groups.flattenedgroups[species]
+
+    fig = _cdft_figure(width, dpi, font)
+    ρtot = dropdims(sum(ρ; dims=nd + 1); dims=nd + 1)
+    φ = selectdim(ρ, nd + 1, species) ./ ρtot
+
+    if nd == 1
+        x = coords[1]
+        ax1 = Makie.Axis(fig[1, 1], ylabel="volume fraction φ")
+        Makie.lines!(ax1, x, φ; label="φ_$species_name")
+        Makie.axislegend(ax1)
+        ax2 = Makie.Axis(fig[2, 1], xlabel="x", ylabel="⟨u⟩_$species_name")
+        ux = selectdim(mean_u, nd + 1, species) |> a -> selectdim(a, nd + 1, 1)
+        Makie.arrows!(ax2, x, zeros(length(x)), ux .* arrow_scale, zeros(length(x)))
+        Makie.linkxaxes!(ax1, ax2)
+        return fig
+    end
+
+    x, y = coords
+    ax = Makie.Axis(fig[1, 1], xlabel="x", ylabel="y", aspect=Makie.DataAspect(),
+                     title="φ_$species_name + ⟨u⟩_$species_name")
+    hm = Makie.heatmap!(ax, x, y, φ; colormap=colormap, colorrange=(0, 1))
+    Makie.Colorbar(fig[1, 2], hm; label="φ_$species_name")
+    xs = x[1:arrow_step:end]; ys = y[1:arrow_step:end]
+    xs_grid = vec(repeat(xs, 1, length(ys))); ys_grid = vec(repeat(ys', length(xs), 1))
+    ux = selectdim(mean_u, nd + 1, species)[1:arrow_step:end, 1:arrow_step:end, 1]
+    uy = selectdim(mean_u, nd + 1, species)[1:arrow_step:end, 1:arrow_step:end, 2]
+    Makie.arrows!(ax, xs_grid, ys_grid, vec(ux) .* arrow_scale, vec(uy) .* arrow_scale)
+    return fig
+end
+
+"""
+    ClassicalDFT.plot_chain_conformations(system::ClassicalDFT.SCFTWLCSystem, ρ, chains;
+                                           colormap=:RdBu, chain_colors=ClassicalDFT.CDFT_DEFAULT_COLORS,
+                                           font=nothing, width=:single, dpi=ClassicalDFT.CDFT_DPI)
+
+Plot one or more [`sample_chain`](@ref) conformations over the two-species density
+difference `φ_1-φ_2` (from `ρ`), for `dimension(system) == 2` (1D chains have no second
+axis to draw a path in, and the sampled-conformation machinery itself is 1D/2D/3D-generic
+— use `sample_chain`'s own return value directly for a 1D or 3D system).
+
+`chains` is a `Vector` of `sample_chain`'s own return type (`Vector{Vector{Float64}}`),
+or a single one. Since a sampled path can legitimately extend outside the structure's
+own periodic box, the background is tiled to whatever extent the chains actually reach,
+rather than clipped to one period.
+"""
+function ClassicalDFT.plot_chain_conformations(system::ClassicalDFT.SCFTWLCSystem, ρ, chains;
+                                                colormap=:RdBu, chain_colors=ClassicalDFT.CDFT_DEFAULT_COLORS,
+                                                font=nothing, width::Symbol=:single, dpi::Real=ClassicalDFT.CDFT_DPI)
+    ClassicalDFT.dimension(system) == 2 || error("plot_chain_conformations only supports dimension(system) == 2")
+    chains isa AbstractVector{<:AbstractVector{<:AbstractVector}} || (chains = [chains])
+    structure = system.structure
+    x_native, y_native = _native_grid(structure)
+    Lx, Ly = structure.ngrid[1] * ClassicalDFT.structure_dz(structure)[1],
+             structure.ngrid[2] * ClassicalDFT.structure_dz(structure)[2]
+
+    ρtot = dropdims(sum(ρ; dims=3); dims=3)
+    diff = ρ[:, :, 1] ./ ρtot .- ρ[:, :, 2] ./ ρtot
+
+    all_x = vcat((p[1] for R in chains for p in R)...)
+    all_y = vcat((p[2] for R in chains for p in R)...)
+    x_tiled, _, _ = _tile_to_cover(x_native, Lx, minimum(all_x), maximum(all_x))
+    y_tiled, _, _ = _tile_to_cover(y_native, Ly, minimum(all_y), maximum(all_y))
+    nxt, nyt = length(x_tiled) ÷ length(x_native), length(y_tiled) ÷ length(y_native)
+    diff_tiled = repeat(diff, nxt, nyt)
+
+    fig = _cdft_figure(width, dpi, font)
+    ax = Makie.Axis(fig[1, 1], xlabel="x", ylabel="y", aspect=Makie.DataAspect(),
+                     title="Sampled chain conformation(s)")
+    Makie.heatmap!(ax, x_tiled, y_tiled, diff_tiled; colormap=colormap, colorrange=(-1, 1))
+    for (i, R) in enumerate(chains)
+        color = chain_colors[mod1(i, length(chain_colors))]
+        xline = [p[1] for p in R]; yline = [p[2] for p in R]
+        Makie.lines!(ax, xline, yline; color=color, linewidth=2.5, label="chain $i")
+        Makie.scatter!(ax, xline, yline; color=color, markersize=8)
+    end
+    length(chains) > 1 && Makie.axislegend(ax; position=:rt)
+    return fig
+end
+
 end

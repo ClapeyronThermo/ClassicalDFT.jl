@@ -30,6 +30,8 @@ using StaticArrays
 # using SIAMFANLEquations
 using KernelAbstractions, Adapt, Enzyme
 using Hankel
+using SpecialFunctions
+using Random
 
 include("base/base.jl")
 
@@ -37,22 +39,28 @@ include("utils/base.jl")
 include("utils/connectivity.jl")
 include("utils/expand_model.jl")
 include("utils/integrals.jl")
+include("utils/spherical_harmonics.jl")
 include("utils/anderson.jl")
 include("utils/matmul.jl")
 include("utils/plot_labels.jl")
 include("utils/plot_style.jl")
 
 include("fields/fields.jl")
+
+# propagator.jl must precede models.jl: SCFT/scft.jl's SCFTWLCSystem type alias
+# references WLCPropagator directly (not just inside function bodies), so that type
+# must already exist when scft.jl is included.
+include("propagator/propagator.jl")
+
 include("models/models.jl")
 include("structure/structure.jl")
 #TODO, port this to Clapeyron
-
-include("propagator/propagator.jl")
 
 include("methods/converge.jl")
 include("methods/surface_tension.jl")
 include("methods/interfacial_tension.jl")
 include("methods/adsorption.jl")
+include("methods/chain_sampling.jl")
 
 export MolStructure, SMILESStructure, CustomStructure, smiles, custom_structure
 

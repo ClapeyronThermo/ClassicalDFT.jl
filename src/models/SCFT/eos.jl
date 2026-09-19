@@ -52,6 +52,85 @@ end
 export SCFTLatticeFluid
 
 """
+    SCFTWormLikeChainFluidParam
+
+- `b`: bond length, indexed by species (`groups.flattenedgroups`) — same role as
+  `SCFTLatticeFluidParam.b`, but the fixed rod length of a bead-rod/Kratky-Porod bond
+  rather than a Gaussian statistical segment length.
+- `lp`: persistence length, indexed by species, same units as `b`. `κ_α = lp_α/b_α` is
+  the dimensionless bending stiffness fed to `bending_eigenvalues`
+  (`src/utils/spherical_harmonics.jl`) by `WLCPropagator`.
+- `chi`: pairwise Flory interaction parameter, symmetric with zero diagonal, indexed by
+  species — identical role to `SCFTLatticeFluidParam.chi`.
+- `nu`: pairwise Maier-Saupe orientational coupling strength, symmetric, indexed by
+  species (unlike `chi`, a nonzero diagonal `nu[α,α]` is physically meaningful — it's a
+  species' self-alignment coupling, not an inter-species contact penalty). Zero by
+  default (no orientational interaction) — see `compute_maier_saupe_field`,
+  `src/models/SCFT/scft.jl`, for how it enters the WLC mean field, and
+  `/Users/pierrewalker/.claude/plans/radiant-brewing-sprout.md` for the full
+  derivation/sign convention (`nu=5` is the isotropic-nematic linear instability
+  threshold for an isolated, homogeneous, self-coupled species — the same `ν*=5`
+  the classical bulk Maier-Saupe self-consistency equation gives).
+"""
+struct SCFTWormLikeChainFluidParam <: EoSParam
+    b::SingleParam{Float64}
+    lp::SingleParam{Float64}
+    chi::PairParam{Float64}
+    nu::PairParam{Float64}
+end
+
+"""
+    SCFTWormLikeChainFluid(grouplist, b, lp, chi; rho0, kappa, nu=nothing, L_max=8, idealmodel=BasicIdeal, references=String[])
+
+A compressible Flory-Huggins-Helfand lattice-fluid `EoSModel` for SCFT bulk
+thermodynamics, for discrete worm-like-chain (bead-rod/Kratky-Porod) species — the
+[`SCFTLatticeFluid`](@ref) sibling paired with [`WLCPropagator`](@ref) instead of
+[`DiscreteGaussianChainPropagator`](@ref). See `SCFTLatticeFluid`'s docstring for the
+shared conventions (`grouplist` format, `a_res`'s meaning, why it omits chain
+translational/mixing entropy); this type only differs in swapping the Gaussian
+statistical segment length `b` for a bond length `b` plus persistence length `lp`, and in
+carrying `L_max` (the spherical-harmonic truncation degree forwarded to
+`WLCPropagator`/`SHTPlan` — see their docstrings). Larger `L_max` resolves stiffer
+species (larger `κ_α = lp_α/b_α`) more accurately but costs more per SCFT iteration
+(`n_orient = (L_max+1)(2L_max+1)` orientation-grid nodes, each needing its own FFT
+convolution in the propagator's translation step) — pick the smallest `L_max` that
+resolves your stiffest species' `bending_eigenvalues` decay (check
+`model.params.lp.values ./ model.params.b.values` against a plot of
+`bending_eigenvalues(κ, L_max)` before committing to a large, slow `L_max` for
+production runs).
+
+Mixing worm-like-chain bonds with discrete-Gaussian-chain bonds in the same chain (e.g. a
+rod-coil block copolymer) is not supported — every bond in every molecule type built from
+this model is a bead-rod bond; see `WLCPropagator`'s docstring for the v1 scope.
+"""
+struct SCFTWormLikeChainFluid{I<:IdealModel} <: SCFTLatticeFluidModel
+    components::Vector{String}
+    groups::GroupParam
+    params::SCFTWormLikeChainFluidParam
+    rho0::Float64
+    kappa::Float64
+    L_max::Int
+    idealmodel::I
+    references::Vector{String}
+end
+
+function SCFTWormLikeChainFluid(grouplist, b::AbstractVector, lp::AbstractVector, chi::AbstractMatrix;
+                                 rho0::Real, kappa::Real, nu::Union{AbstractMatrix,Nothing}=nothing,
+                                 L_max::Int=8, idealmodel = BasicIdeal, references = String[])
+    groups = GroupParam(grouplist)
+    nspecies = length(groups.flattenedgroups)
+    nu_vals = nu === nothing ? zeros(nspecies, nspecies) : nu
+    params = SCFTWormLikeChainFluidParam(
+        SingleParam("b", groups.flattenedgroups, Float64.(b)),
+        SingleParam("lp", groups.flattenedgroups, Float64.(lp)),
+        PairParam("chi", groups.flattenedgroups, Float64.(chi)),
+        PairParam("nu", groups.flattenedgroups, Float64.(nu_vals)))
+    ideal = init_model(idealmodel, groups.components, String[], false)
+    return SCFTWormLikeChainFluid(groups.components, groups, params, Float64(rho0), Float64(kappa), L_max, ideal, references)
+end
+export SCFTWormLikeChainFluid
+
+"""
     SCFTSpecies(sequence, nbeads, levels, i_groups, n_intergroups, ensemble, n_molecules, molecule_bulk_density, bulk_density)
 
 Everything SCFT-calculation-specific that isn't part of the bulk EoS model: `sequence`
@@ -126,7 +205,7 @@ Note `custom_structure`'s parser only supports single-character species names.
 Returns `(expanded_groups::GroupParam, ngroups_k::Vector{Int})` (matching Clapeyron's own
 `expand_groups`'s return shape, for `expand_params`).
 """
-function expand_groups(model::SCFTLatticeFluid, mol_structure::Dict{String,<:MolStructure})
+function expand_groups(model::SCFTLatticeFluidModel, mol_structure::Dict{String,<:MolStructure})
     species_list = model.groups.flattenedgroups
     ngroup_types = length(species_list)
     ncomp = length(model.components)
@@ -227,6 +306,23 @@ function expand_model(model::SCFTLatticeFluid, mol_structure::Dict{String,<:MolS
 end
 
 """
+    expand_model(model::SCFTWormLikeChainFluid, mol_structure)
+
+`SCFTWormLikeChainFluid` analogue of `expand_model(model::SCFTLatticeFluid, ...)` — same
+chain-order-preserving group/parameter expansion (`expand_groups`/`expand_params`, both
+already widened to `SCFTLatticeFluidModel`/generic over any `EoSParam`), just building
+the right concrete model type. `expand_params` handles the extra `lp::SingleParam` field
+automatically (it walks every `SingleParam`/`PairParam` field of the `EoSParam` struct by
+reflection), exactly like `b` already is.
+"""
+function expand_model(model::SCFTWormLikeChainFluid, mol_structure::Dict{String,<:MolStructure})
+    expanded_groups, ngroups_k = expand_groups(model, mol_structure)
+    expanded_params = expand_params(model.params, expanded_groups, nothing, ngroups_k)
+    return SCFTWormLikeChainFluid(expanded_groups.components, expanded_groups, expanded_params,
+                                   model.rho0, model.kappa, model.L_max, model.idealmodel, model.references)
+end
+
+"""
     get_species(model::SCFTLatticeFluid, structure::DFTStructure; ensemble, n_molecules)
 
 Build the [`SCFTSpecies`](@ref) for `model`, matching `HeterogcPCPSAFT`'s
@@ -251,7 +347,7 @@ nothing is lost by fixing it at construction time instead of waiting on a solve-
 quadrature choice. `ensemble`/`n_molecules` are kept as keyword arguments since
 `HeterogcPCPSAFT` has no equivalent concept.
 """
-function get_species(model::SCFTLatticeFluid, structure::DFTStructure;
+function get_species(model::SCFTLatticeFluidModel, structure::DFTStructure;
                       ensemble::Vector{Symbol} = fill(:grand_canonical, length(model.components)),
                       n_molecules::AbstractVector = zeros(length(model.components)))
     letters = _group_letter.(model.groups.flattenedgroups)
@@ -294,7 +390,19 @@ function get_propagator(model::SCFTLatticeFluid, species::SCFTSpecies, structure
     return DiscreteGaussianChainPropagator(model, species, structure, backend, FP)
 end
 
-function a_res(model::SCFTLatticeFluid, V, T, z)
+#=
+    get_propagator(model::SCFTWormLikeChainFluid, species::SCFTSpecies, structure::DFTStructure, backend, FP=Float64)
+
+Build the `WLCPropagator` for `model`, matching the generic
+`get_propagator(model, species, structure, backend, FP)` dispatch every other DFT-family
+model uses.
+=#
+function get_propagator(model::SCFTWormLikeChainFluid, species::SCFTSpecies, structure::DFTStructure,
+                         backend::Backend, ::Type{FP}=Float64) where FP<:AbstractFloat
+    return WLCPropagator(model, species, structure, backend, FP; L_max=model.L_max)
+end
+
+function a_res(model::SCFTLatticeFluidModel, V, T, z)
     Σz = sum(z)
     nspecies = length(model.groups.flattenedgroups)
     n_species = sum(z[i] .* model.groups.n_flattenedgroups[i] for i in eachindex(z))
@@ -316,15 +424,17 @@ end
 # Placeholders: ClassicalDFT always calls a_res/VT_chemical_potential_res at an explicitly
 # prescribed density, never through Clapeyron's own volume/phase solvers, so these
 # only matter if this model is ever used standalone for solver bootstrapping.
-lb_volume(model::SCFTLatticeFluid, T, z) =
+lb_volume(model::SCFTLatticeFluidModel, T, z) =
     sum(z[i]*sum(model.groups.n_flattenedgroups[i]) for i in eachindex(z)) / (2*model.rho0)
-T_scale(model::SCFTLatticeFluid, z) = one(eltype(z))
+T_scale(model::SCFTLatticeFluidModel, z) = one(eltype(z))
 
 #=
-    length_scale(model::SCFTLatticeFluid)
+    length_scale(model::SCFTLatticeFluidModel)
 
-The largest statistical segment length `b` across every species — the SCFT analogue of
-`length_scale(model::SAFTModel) = maximum(model.params.sigma.values)`, used the same way
-(e.g. for choosing grid bounds, and by the Makie plotting recipe's axis normalization).
+The largest statistical segment/bond length `b` across every species — the SCFT analogue
+of `length_scale(model::SAFTModel) = maximum(model.params.sigma.values)`, used the same
+way (e.g. for choosing grid bounds, and by the Makie plotting recipe's axis
+normalization). Both `SCFTLatticeFluidParam` and `SCFTWormLikeChainFluidParam` have a
+`b` field, so this widened signature covers both concrete model types.
 =#
-length_scale(model::SCFTLatticeFluid) = maximum(model.params.b.values)
+length_scale(model::SCFTLatticeFluidModel) = maximum(model.params.b.values)
