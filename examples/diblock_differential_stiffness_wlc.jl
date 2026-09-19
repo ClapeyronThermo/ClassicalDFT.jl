@@ -57,19 +57,13 @@ println("incompressibility: ρ_total ∈ [", round(minimum(ρtot), digits=3), ",
 
 # --- Local preferred orientation ------------------------------------------------------
 # orientation_order_parameter needs q_in/q_out resolved in orientation (not just ρ, which
-# is already marginalized over u), so it's computed from one more propagate! call at the
-# converged field — S_α(x) = (3⟨u_x²⟩_α(x)-1)/2: S=1 bonds aligned along x (the domain
-# normal), S=-1/2 bonds confined to the y-z plane (perpendicular to the domain normal),
-# S=0 isotropic (what a DiscreteGaussianChainPropagator chain always has — it has no
-# orientation to align in the first place, so this diagnostic only exists for WLC chains).
-w = zeros(size(ρ)...)
-w_bulk = ClassicalDFT.compute_bulk_fields(system.model, ClassicalDFT.compute_bulk_densities(system))
-ClassicalDFT.compute_fields!(system, ρ, w)
-cache_propagator = ClassicalDFT.preallocate_propagator(system, system.propagator, ρ, CPU())
-ClassicalDFT.propagate!(system, ρ, w, cache_propagator; w_bulk=w_bulk)
-q_in = ClassicalDFT.cache_q_in(cache_propagator)
-q_out = ClassicalDFT.cache_q_out(cache_propagator)
-S = ClassicalDFT.orientation_order_parameter(system, q_in, q_out; axis=1)
+# is already marginalized over u) -- computed internally from ρ (one more propagate! call
+# at the converged field) since q_in/q_out aren't passed in here.
+# S_α(x) = (3⟨u_x²⟩_α(x)-1)/2: S=1 bonds aligned along x (the domain normal), S=-1/2
+# bonds confined to the y-z plane (perpendicular to the domain normal), S=0 isotropic
+# (what a DiscreteGaussianChainPropagator chain always has -- it has no orientation to
+# align in the first place, so this diagnostic only exists for WLC chains).
+S = ClassicalDFT.orientation_order_parameter(system, ρ; axis=1)
 
 println("S_A (stiff block)    range: ", round.(extrema(S[:, 1]); digits=3))
 println("S_B (flexible block) range: ", round.(extrema(S[:, 2]); digits=3))

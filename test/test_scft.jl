@@ -488,7 +488,7 @@ end
         q_out = ClassicalDFT.cache_q_out(cache_propagator)
 
         for axis in 1:3
-            S = ClassicalDFT.orientation_order_parameter(system, q_in, q_out; axis=axis)
+            S = ClassicalDFT.orientation_order_parameter(system, ρ; axis=axis, q_in=q_in, q_out=q_out)
             @test all(x -> isapprox(x, 0.0; atol=1e-10), S)
         end
     end

@@ -365,7 +365,7 @@ function _orientation_second_moments(system::SCFTWLCSystem, q_in, q_out, weights
 end
 
 """
-    compute_orientation_tensor(system::SCFTWLCSystem, q_in, q_out)
+    compute_orientation_tensor(system::SCFTWLCSystem, ρ; q_in=nothing, q_out=nothing)
 
 Full traceless symmetric nematic order-parameter tensor `Q_ab^α(r) = (3⟨u_a u_b⟩_α(r) -
 δ_ab)/2` for each WLC species `α`, generalizing `orientation_order_parameter`'s scalar
@@ -380,8 +380,12 @@ density at some position gets `Q_ab=-δ_ab/2` there (the isotropic-orthogonal fl
 matching `orientation_order_parameter`'s analogous behavior) — these are different
 cases: the former has no orientation distribution to speak of anywhere, the latter's
 distribution is well-defined everywhere else and only vanishes locally.
+
+`q_in`/`q_out` are computed from `ρ` internally ([`compute_propagator_fields`](@ref))
+unless both are given directly.
 """
-function compute_orientation_tensor(system::SCFTWLCSystem, q_in, q_out)
+function compute_orientation_tensor(system::SCFTWLCSystem, ρ; q_in=nothing, q_out=nothing)
+    q_in, q_out = resolve_propagator_fields(system, ρ, q_in, q_out)
     nd = dimension(system)
     FT = eltype(q_in[1])
     u_nodes = system.propagator.sht.u_nodes
@@ -404,7 +408,7 @@ function compute_orientation_tensor(system::SCFTWLCSystem, q_in, q_out)
 end
 
 """
-    mean_orientation_field(system::SCFTWLCSystem, q_in, q_out)
+    mean_orientation_field(system::SCFTWLCSystem, ρ; q_in=nothing, q_out=nothing)
 
 Local polar orientation vector `⟨u⟩^α(r) = ∫dΩ u ψ_α(r,u) / ∫dΩ ψ_α(r,u)` for each WLC
 species `α`, where `ψ_α(r,u) = Σ_{k:α(k)=α} q_in(r,u,k) q_out(r,u,k)` is the same local
@@ -422,11 +426,15 @@ A species present in no chain at all gets `⟨u⟩=0` everywhere (matching
 `orientation_order_parameter`'s analogous convention), as does any position where that
 species' local density is exactly zero.
 
+`q_in`/`q_out` are computed from `ρ` internally ([`compute_propagator_fields`](@ref))
+unless both are given directly.
+
 Returns shape `(ngrid..., nspecies, 3)` — the trailing 3 is always the full Cartesian
 `(u_x,u_y,u_z)` triple regardless of `dimension(system)`, matching `WLCPropagator`'s own
 "orientation is always tracked in full 3D" convention (see its docstring).
 """
-function mean_orientation_field(system::SCFTWLCSystem, q_in, q_out)
+function mean_orientation_field(system::SCFTWLCSystem, ρ; q_in=nothing, q_out=nothing)
+    q_in, q_out = resolve_propagator_fields(system, ρ, q_in, q_out)
     nd = dimension(system)
     FT = eltype(q_in[1])
     u_nodes = system.propagator.sht.u_nodes
@@ -581,7 +589,7 @@ function compute_maier_saupe_field(system::SCFTWLCSystem, R_tensor)
 end
 
 """
-    orientation_order_parameter(system::SCFTWLCSystem, q_in, q_out; axis::Int=1)
+    orientation_order_parameter(system::SCFTWLCSystem, ρ; axis::Int=1, q_in=nothing, q_out=nothing)
 
 Local nematic order parameter `S_α(r) = (3⟨u_axis²⟩_α(r) - 1)/2` for each WLC species
 `α`, where `⟨u_axis²⟩_α(r)` is the orientation-grid average of `u_axis²` weighted by the
@@ -601,11 +609,15 @@ place. The double-counted field factor `exp(Δw_α)` that `compute_densities!` d
 when building `ρ` is a per-position scalar independent of `u`, so it cancels exactly in
 this ratio and is not needed here.
 
+`q_in`/`q_out` are computed from `ρ` internally ([`compute_propagator_fields`](@ref))
+unless both are given directly.
+
 Returns an `Array` of shape `(ngrid..., nspecies)`, matching `ρ`'s own shape convention.
 Positions where a species' local density is exactly zero return `S=0` (rather than
 `NaN`) since there is no orientation distribution to speak of there.
 """
-function orientation_order_parameter(system::SCFTWLCSystem, q_in, q_out; axis::Int=1)
+function orientation_order_parameter(system::SCFTWLCSystem, ρ; axis::Int=1, q_in=nothing, q_out=nothing)
+    q_in, q_out = resolve_propagator_fields(system, ρ, q_in, q_out)
     nd = dimension(system)
     FT = eltype(q_in[1])
     u_axis2 = reshape(system.propagator.sht.u_nodes[axis, :] .^ 2, :, 1)

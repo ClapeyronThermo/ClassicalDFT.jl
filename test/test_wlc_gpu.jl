@@ -39,13 +39,7 @@ function _run_wlc_gpu_case(device)
     ρ = ClassicalDFT.initialize_profiles(system)
     ClassicalDFT.converge!(system, ρ; verbose=false, tol=1e-4, maxit=300)
 
-    w = similar(ρ)
-    w_bulk = ClassicalDFT.compute_bulk_fields(system.model, ClassicalDFT.compute_bulk_densities(system))
-    ClassicalDFT.compute_fields!(system, ρ, w)
-    cache = ClassicalDFT.preallocate_propagator(system, system.propagator, ρ, device)
-    ClassicalDFT.propagate!(system, ρ, w, cache; w_bulk=w_bulk)
-    q_in, q_out = ClassicalDFT.cache_q_in(cache), ClassicalDFT.cache_q_out(cache)
-    S = ClassicalDFT.orientation_order_parameter(system, q_in, q_out; axis=1)
+    S = ClassicalDFT.orientation_order_parameter(system, ρ; axis=1)
     return Array(ρ), Array(S)
 end
 

@@ -93,7 +93,64 @@ function _sample_categorical(rng::AbstractRNG, weights::AbstractVector)
 end
 
 """
-    bead_marginal_density(system::SCFTWLCSystem, q_in, q_out, bead::Int; chain::Int=1)
+    compute_propagator_fields(system::SCFTSystem, ρ)
+
+Wraps the propagator boilerplate `converge!` itself repeats every iteration
+(`compute_fields!` → `preallocate_propagator` → `propagate!`) to get `(q_in, q_out)` at
+an already-converged `ρ`. Every WLC function that needs `q_in`/`q_out`
+([`orientation_order_parameter`](@ref), [`compute_orientation_tensor`](@ref),
+[`mean_orientation_field`](@ref), [`bead_marginal_density`](@ref),
+[`terminal_orientation_anchor`](@ref), [`sample_chain`](@ref), and the Visualization
+extension's `plot_orientation_field`/`plot_chain_conformations`) takes `ρ` as its
+positional argument and calls this internally via [`resolve_propagator_fields`](@ref)
+when its own `q_in`/`q_out` keywords are left at their `nothing` default — callers never
+need to compute a propagator by hand.
+
+Does not thread through the Maier-Saupe orientation-moment state `R_tensor` that
+`converge!` carries between iterations for `nu != 0` models (see
+`get_new_profile!(system::SCFTWLCSystem, ...)`, `src/methods/converge.jl`) — that state
+isn't recoverable from `ρ` alone, only from `converge!`'s own iteration history, so this
+throws an `ArgumentError` for such a model instead of silently returning `q_in`/`q_out`
+for the wrong (`nu=0`) field.
+
+Not cached: each call reallocates `cache_propagator` and reruns `propagate!` once. Every
+function above accepts `q_in`/`q_out` as optional keywords for exactly this reason — for
+repeated queries at the same converged `ρ` (e.g. sampling many chains from one anchor,
+as in the [Worm-Like Chains](../tutorials/wlc.md) tutorial's loop/bridge example), call
+this once yourself and pass its `(q_in, q_out)` into each subsequent call rather than
+letting every call recompute its own.
+"""
+function compute_propagator_fields(system::SCFTSystem, ρ)
+    if hasproperty(system.model.params, :nu)
+        nu = system.model.params.nu.values
+        any(!=(zero(eltype(nu))), nu) && throw(ArgumentError(
+            "compute_propagator_fields does not support nu != 0 (Maier-Saupe) models -- " *
+            "the converged q_in/q_out there depend on the R_tensor state converge! tracks " *
+            "across iterations, which isn't recoverable from ρ alone."))
+    end
+    w = zero(ρ)
+    w_bulk = compute_bulk_fields(system.model, compute_bulk_densities(system))
+    compute_fields!(system, ρ, w)
+    cache_propagator = preallocate_propagator(system, ρ)
+    propagate!(system, ρ, w, cache_propagator; w_bulk=w_bulk)
+    return cache_q_in(cache_propagator), cache_q_out(cache_propagator)
+end
+
+"""
+    resolve_propagator_fields(system::SCFTSystem, ρ, q_in, q_out)
+
+`(q_in, q_out)` if neither is `nothing` (a caller-supplied pair, passed straight
+through with no extra work), otherwise [`compute_propagator_fields`](@ref)`(system, ρ)`.
+The shared "use it if given, else compute it from `ρ`" check behind every WLC
+function's `q_in=nothing, q_out=nothing` keywords (see [`compute_propagator_fields`](@ref)
+for the full list) — not part of the public API, but documented here since its logic is
+exactly what "does this call recompute the propagator?" depends on.
+"""
+resolve_propagator_fields(system::SCFTSystem, ρ, q_in, q_out) =
+    (q_in === nothing || q_out === nothing) ? compute_propagator_fields(system, ρ) : (q_in, q_out)
+
+"""
+    bead_marginal_density(system::SCFTWLCSystem, ρ, bead::Int; chain::Int=1, q_in=nothing, q_out=nothing)
 
 The (unnormalized) marginal spatial density of one specific bead, `ρ_bead(r) = ∫dΩ
 q_in(r,u,bead) q_out(r,u,bead)`, as opposed to [`compute_densities!`](@ref)'s own
@@ -103,10 +160,14 @@ meaningful (`q_in`/`q_out`'s overall scale is gauge-dependent — see
 [`terminal_orientation_anchor`](@ref) needs: the `argmax` location of this array is that
 bead's own most likely position.
 
+`q_in`/`q_out` are computed from `ρ` internally ([`compute_propagator_fields`](@ref))
+unless both are given directly.
+
 Returns an `ngrid`-shaped array for chain type `chain` (default the first/only molecule
 type).
 """
-function bead_marginal_density(system::SCFTWLCSystem, q_in, q_out, bead::Int; chain::Int=1)
+function bead_marginal_density(system::SCFTWLCSystem, ρ, bead::Int; chain::Int=1, q_in=nothing, q_out=nothing)
+    q_in, q_out = resolve_propagator_fields(system, ρ, q_in, q_out)
     nd = dimension(system)
     sht = system.propagator.sht
     n_orient = size(sht.u_nodes, 2)
@@ -121,13 +182,17 @@ function bead_marginal_density(system::SCFTWLCSystem, q_in, q_out, bead::Int; ch
 end
 
 """
-    terminal_orientation_anchor(system::SCFTWLCSystem, q_in, q_out, bead::Int;
-                                chain::Int=1, orientation::Symbol=:mode)
+    terminal_orientation_anchor(system::SCFTWLCSystem, ρ, bead::Int;
+                                chain::Int=1, orientation::Symbol=:mode,
+                                q_in=nothing, q_out=nothing)
 
 The most likely position `r0` for `bead` (`argmax` of [`bead_marginal_density`](@ref)),
 paired with either the most likely (`orientation=:mode`) or mean (`orientation=:mean`)
 orientation there — a principled starting point for [`sample_chain`](@ref), rather than
 a manually chosen `(r0,u0)`.
+
+`q_in`/`q_out` are computed from `ρ` internally ([`compute_propagator_fields`](@ref))
+unless both are given directly.
 
 `:mode` returns the single quadrature-grid orientation node maximizing the local weight
 `ψ(u) ∝ q_in(r0,u,bead) q_out(r0,u,bead)`. At a position with no net directional bias
@@ -147,9 +212,11 @@ Returns `(r0, u0, mean_u)`: `r0::NTuple` (grid-point coordinates), `u0::Vector{F
 (a unit vector — one of `system.propagator.sht.u_nodes`' own columns), `mean_u` (the raw
 polar vector at `r0`, for diagnosing the `:mode` case and reporting alongside `:mean`).
 """
-function terminal_orientation_anchor(system::SCFTWLCSystem, q_in, q_out, bead::Int;
-                                      chain::Int=1, orientation::Symbol=:mode)
+function terminal_orientation_anchor(system::SCFTWLCSystem, ρ, bead::Int;
+                                      chain::Int=1, orientation::Symbol=:mode,
+                                      q_in=nothing, q_out=nothing)
     orientation in (:mode, :mean) || throw(ArgumentError("orientation must be :mode or :mean, got $orientation"))
+    q_in, q_out = resolve_propagator_fields(system, ρ, q_in, q_out)
     nd = dimension(system)
     structure = system.structure
     dz = structure_dz(structure)
@@ -157,7 +224,7 @@ function terminal_orientation_anchor(system::SCFTWLCSystem, q_in, q_out, bead::I
     n_orient = size(sht.u_nodes, 2)
     qin_c, qout_c = q_in[chain], q_out[chain]
 
-    ρ_bead = bead_marginal_density(system, q_in, q_out, bead; chain=chain)
+    ρ_bead = bead_marginal_density(system, ρ, bead; chain=chain, q_in=q_in, q_out=q_out)
     idx0 = Tuple(argmax(ρ_bead))
     r0 = ntuple(d -> bounds(structure, d)[1] + (idx0[d] - 1) * dz[d], nd)
 
@@ -178,8 +245,9 @@ function terminal_orientation_anchor(system::SCFTWLCSystem, q_in, q_out, bead::I
 end
 
 """
-    sample_chain(system::SCFTWLCSystem, q_in, q_out, anchor_bead::Int, r0, u0;
-                 chain::Int=1, rng::AbstractRNG=Random.default_rng())
+    sample_chain(system::SCFTWLCSystem, ρ, anchor_bead::Int, r0, u0;
+                 chain::Int=1, rng::AbstractRNG=Random.default_rng(),
+                 q_in=nothing, q_out=nothing)
 
 Reconstruct one full bead-by-bead conformation `R_1,...,R_N` of chain type `chain`,
 consistent with the converged mean field, conditioned on `anchor_bead` sitting at
@@ -188,6 +256,11 @@ position `r0` with orientation `u0` (a length-3 unit vector, e.g. from
 every other function built on `q_in`/`q_out` elsewhere in this package
 (`orientation_order_parameter`, `mean_orientation_field`, `compute_densities!`, ...),
 all of which are ENSEMBLE-AVERAGED marginals. This is one concrete realization.
+
+`q_in`/`q_out` are computed from `ρ` internally ([`compute_propagator_fields`](@ref))
+unless both are given directly — pass them explicitly when sampling many chains from
+the same converged `ρ` (e.g. in a loop) to avoid recomputing the propagator on every
+call.
 
 Discrete WLC convention: `N` beads, `N-1` bonds, bond `k`'s direction is `u_k`,
 `R_{k+1} = R_k + b_k·u_k[1:nd]` (only the first `nd` Cartesian components of `u`
@@ -206,8 +279,10 @@ directions from it, `q_out`-driven above `anchor_bead` and `q_in`-driven below i
 Returns a `Vector{Vector{Float64}}` of length-`nd` bead positions, `R[anchor_bead] ==
 collect(r0)` exactly.
 """
-function sample_chain(system::SCFTWLCSystem, q_in, q_out, anchor_bead::Int, r0, u0;
-                       chain::Int=1, rng::AbstractRNG=Random.default_rng())
+function sample_chain(system::SCFTWLCSystem, ρ, anchor_bead::Int, r0, u0;
+                       chain::Int=1, rng::AbstractRNG=Random.default_rng(),
+                       q_in=nothing, q_out=nothing)
+    q_in, q_out = resolve_propagator_fields(system, ρ, q_in, q_out)
     nd = dimension(system)
     structure = system.structure
     species = system.species.sequence[chain]
@@ -261,21 +336,47 @@ end
 
 """
     plot_chain_conformations(system::SCFTWLCSystem, ρ, chains; kwargs...)
+    plot_chain_conformations(system::SCFTWLCSystem, ρ, anchor_beads::AbstractVector{<:Integer};
+                              chain=1, orientation=:mean, rng=Random.default_rng(),
+                              q_in=nothing, q_out=nothing, kwargs...)
 
-Plot one or more [`sample_chain`](@ref) conformations (`chains`, a `Vector` of that
-function's own return type, or a single one) over the converged density profile `ρ`,
-handling `dimension(system) ∈ {1,2}` and periodic wraparound (a sampled path can — and
-often does — legitimately extend outside the structure's own `[0,L)` box; this tiles
-the periodic background to match, rather than clipping). Requires `using Makie` (or a
-Makie backend, e.g. `CairoMakie`) — this is a stub until then.
+Plot one or more [`sample_chain`](@ref) conformations over the converged density profile
+`ρ`, handling `dimension(system) ∈ {1,2}` and periodic wraparound (a sampled path can —
+and often does — legitimately extend outside the structure's own `[0,L)` box; this tiles
+the periodic background to match, rather than clipping).
+
+The `chains` method takes pre-sampled conformations directly (`chains`, a `Vector` of
+[`sample_chain`](@ref)'s own return type, or a single one) — for full control over how
+each one was anchored/sampled. The `anchor_beads` method is the convenience path: it
+anchors and samples one conformation per bead in `anchor_beads` and plots them the same
+way — no `sample_chain` calls required from the caller. Either way, `q_in`/`q_out` are
+computed from `ρ` internally ([`compute_propagator_fields`](@ref)) unless both are given
+directly; the `anchor_beads` method only ever computes them once (even for many
+`anchor_beads`), reusing them across every anchor.
+
+Each chain is drawn per species (`chain` selects which molecule type's own sequence to
+read): a run of beads from an exactly rigid species (`lp=Inf`) as a thick straight line,
+a run from a flexible species as a thin smoothed curve through the sampled positions —
+see the Visualization extension's own docstring for the full set of styling keywords
+(`species_colors`, `rod_linewidth`, `coil_linewidth`, `margin`, ...).
+
+Requires `using Makie` (or a Makie backend, e.g. `CairoMakie`) — this is a stub until
+then.
 """
 function plot_chain_conformations end
 
 """
-    plot_orientation_field(system::SCFTWLCSystem, q_in, q_out; kwargs...)
+    plot_orientation_field(system::SCFTWLCSystem, ρ; species=1, chain=1, colormap=:RdBu,
+                            arrow_step=3, arrow_scale=2.0, font=nothing, width=:single,
+                            dpi=CDFT_DPI, q_in=nothing, q_out=nothing)
 
 Plot [`mean_orientation_field`](@ref)'s `⟨u⟩(r)` as an arrow map over the converged
-density profile, handling `dimension(system) ∈ {1,2}`. Requires `using Makie` (or a
-Makie backend, e.g. `CairoMakie`) — this is a stub until then.
+density profile, handling `dimension(system) ∈ {1,2}`. `q_in`/`q_out` are computed from
+`ρ` internally ([`compute_propagator_fields`](@ref)) unless both are given directly as
+keywords — pass them when you already have them on hand (e.g. because you just called
+[`orientation_order_parameter`](@ref)) to skip recomputing the propagator.
+
+Requires `using Makie` (or a Makie backend, e.g. `CairoMakie`) — this is a stub until
+then.
 """
 function plot_orientation_field end

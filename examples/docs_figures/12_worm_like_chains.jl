@@ -33,23 +33,21 @@ converge!(system, ρ; verbose=true, tol=1e-5, maxit=3000, beta=5e-3)
 save(assetpath("wlc_density.png"), plot(system, ρ))
 
 # Orientation and mean-orientation-field require q_in/q_out resolved in orientation (not
-# just rho, which is already marginalized over u) -- one more propagate! call at the
-# converged field, exactly as compute_densities! itself does internally.
-w = zeros(size(ρ)...)
-w_bulk = ClassicalDFT.compute_bulk_fields(system.model, ClassicalDFT.compute_bulk_densities(system))
-ClassicalDFT.compute_fields!(system, ρ, w)
-cache_propagator = ClassicalDFT.preallocate_propagator(system, system.propagator, ρ, CPU())
-ClassicalDFT.propagate!(system, ρ, w, cache_propagator; w_bulk=w_bulk)
-q_in = ClassicalDFT.cache_q_in(cache_propagator)
-q_out = ClassicalDFT.cache_q_out(cache_propagator)
+# just rho, which is already marginalized over u) -- plot_orientation_field/
+# terminal_orientation_anchor/sample_chain all compute that internally from rho (one more
+# propagate! call at the converged field, exactly as compute_densities! itself does
+# internally) since q_in/q_out aren't passed in below. Computed once by hand here instead
+# (compute_propagator_fields) purely to reuse across the anchor/sample_chain calls that
+# follow, rather than repeating that propagate! call for each of them.
+q_in, q_out = ClassicalDFT.compute_propagator_fields(system, ρ)
 
 save(assetpath("wlc_orientation_field.png"),
-     ClassicalDFT.plot_orientation_field(system, ρ, q_in, q_out; species=1))
+     ClassicalDFT.plot_orientation_field(system, ρ; species=1, q_in=q_in, q_out=q_out))
 
-r0, u0, mean_u = ClassicalDFT.terminal_orientation_anchor(system, q_in, q_out, 1; orientation=:mean)
-R1 = ClassicalDFT.sample_chain(system, q_in, q_out, 1, r0, u0; rng=MersenneTwister(1))
-r0N, u0N, _ = ClassicalDFT.terminal_orientation_anchor(system, q_in, q_out, N_seg; orientation=:mean)
-R2 = ClassicalDFT.sample_chain(system, q_in, q_out, N_seg, r0N, u0N; rng=MersenneTwister(2))
+r0, u0, mean_u = ClassicalDFT.terminal_orientation_anchor(system, ρ, 1; orientation=:mean, q_in=q_in, q_out=q_out)
+R1 = ClassicalDFT.sample_chain(system, ρ, 1, r0, u0; rng=MersenneTwister(1), q_in=q_in, q_out=q_out)
+r0N, u0N, _ = ClassicalDFT.terminal_orientation_anchor(system, ρ, N_seg; orientation=:mean, q_in=q_in, q_out=q_out)
+R2 = ClassicalDFT.sample_chain(system, ρ, N_seg, r0N, u0N; rng=MersenneTwister(2), q_in=q_in, q_out=q_out)
 save(assetpath("wlc_chain_conformations.png"),
      ClassicalDFT.plot_chain_conformations(system, ρ, [R1, R2]))
 
