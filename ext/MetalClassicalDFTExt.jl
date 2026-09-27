@@ -1,4 +1,4 @@
-module MetalcDFTExt
+module MetalClassicalDFTExt
 
 using ClassicalDFT
 using Metal

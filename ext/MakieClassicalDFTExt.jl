@@ -1,4 +1,4 @@
-module MakiecDFTExt
+module MakieClassicalDFTExt
 
 using ClassicalDFT
 import ClassicalDFT: Clapeyron

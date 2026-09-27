@@ -1,4 +1,4 @@
-module GCIdentifierCDFTExt
+module GCIdentifierClassicalDFTExt
 
 using ClassicalDFT, GCIdentifier
 import GCIdentifier: get_expanded_groups, get_mol, get_atoms, __getbondlist, get_grouplist

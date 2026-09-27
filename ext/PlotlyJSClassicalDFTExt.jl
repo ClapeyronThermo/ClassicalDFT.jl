@@ -1,4 +1,4 @@
-module PlotlyJScDFTExt
+module PlotlyJSClassicalDFTExt
 using ClassicalDFT
 using PlotlyJS
 
