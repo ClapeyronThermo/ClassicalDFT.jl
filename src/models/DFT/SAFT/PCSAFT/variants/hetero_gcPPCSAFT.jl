@@ -104,7 +104,7 @@ end
     FP    = eltype(n)
     idx_ζ = 4 + ND
     ζ₃ = zero(FP); ζ₂ = zero(FP)
-    @inbounds for i in 1:NC
+    @inbounds @unroll for i in 1:NC
         mi = m_seg[i]; di = HSd[i]; ρ̄hci = n[kk, idx_ζ, i]
         ζ₃ += mi * ρ̄hci
         ζ₂ += mi * ρ̄hci / di
@@ -121,7 +121,7 @@ end
                                HSd, kk, ζ₂, inv1ζ₃) where NB
     FP     = typeof(ζ₂)
     res_hc = zero(FP)
-    @inbounds for ib in 1:NB
+    @inbounds @unroll for ib in 1:NB
         k = _nti(bond_k, ib); l = _nti(bond_l, ib)
         dk = HSd[k]; dl = HSd[l]
         r_HSd = dk * dl / (dk + dl)
@@ -149,7 +149,7 @@ end
     idx_ρz  = 5 + ND
     factor  = 3 / (4*ψ*ψ*ψ*_π)
     ρ̄_tot   = zero(FP); m̄_num = zero(FP); η_sum = zero(FP)
-    @inbounds for i in 1:NC
+    @inbounds @unroll for i in 1:NC
         di  = HSd[i]
         ρ̄i  = n[kk, idx_ρz, i] * factor / (di*di*di)
         m̄_num += m_seg[i] * ρ̄i
@@ -160,10 +160,10 @@ end
     ηd = _π * η_sum /6
 
     m2ϵσ3_1 = zero(FP); m2ϵσ3_2 = zero(FP)
-    @inbounds for i in 1:NC
+    @inbounds @unroll for i in 1:NC
         di   = HSd[i]
         ρ̄i   = n[kk, idx_ρz, i] * factor / (di*di*di)
-        @inbounds for j in 1:NC
+        @inbounds @unroll for j in 1:NC
             dj   = HSd[j]
             ρ̄j   = n[kk, idx_ρz, j] * factor / (dj*dj*dj)
             cij  = ρ̄i * ρ̄j * m_seg[i] * m_seg[j] * σ[i,j]*σ[i,j]*σ[i,j]

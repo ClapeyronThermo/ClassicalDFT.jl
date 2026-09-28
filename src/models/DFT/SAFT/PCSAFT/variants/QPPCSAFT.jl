@@ -98,12 +98,12 @@ QPCP-SAFT polar term at grid point `kk`: Padé sum of DD + QQ + DQ contributions
     idx_ρz = 6 + ND
     factor = 3 / (4*ψ*ψ*ψ*_π)
     ∑ρ̄_p  = zero(FP)
-    @inbounds for i in 1:NC
+    @inbounds @unroll for i in 1:NC
         ∑ρ̄_p += n[kk, idx_ρz, i] * factor / (params.HSd[i]*params.HSd[i]*params.HSd[i])
     end
 
     has_dipole = false;  has_quad = false
-    @inbounds for i in 1:NC
+    @inbounds @unroll for i in 1:NC
         if !iszero(dip2[i]);  has_dipole = true; end
         if !iszero(quad2[i]); has_quad   = true; end
     end
@@ -113,12 +113,12 @@ QPCP-SAFT polar term at grid point `kk`: Padé sum of DD + QQ + DQ contributions
     # ── DD contribution ───────────────────────────────────────────────────────
     if has_dipole
         _A₂_dd = zero(FP)
-        @inbounds for i in 1:NC
+        @inbounds @unroll for i in 1:NC
             dip2_i = dip2[i]
             if iszero(dip2_i); continue; end
             ρ̄zi_i = n[kk, idx_ρz, i] * factor / (params.HSd[i]*params.HSd[i]*params.HSd[i])
             xᵢ = ρ̄zi_i / ∑ρ̄_p
-            @inbounds for j in 1:NC
+            @inbounds @unroll for j in 1:NC
                 dip2_j = dip2[j]
                 if iszero(dip2_j); continue; end
                 ρ̄zi_j = n[kk, idx_ρz, j] * factor / (params.HSd[j]*params.HSd[j]*params.HSd[j])
@@ -132,17 +132,17 @@ QPCP-SAFT polar term at grid point `kk`: Padé sum of DD + QQ + DQ contributions
 
         if !iszero(_A₂_dd)
             _A₃_dd = zero(FP)
-            @inbounds for i in 1:NC
+            @inbounds @unroll for i in 1:NC
                 dip2_i = dip2[i]
                 if iszero(dip2_i); continue; end
                 ρ̄zi_i = n[kk, idx_ρz, i] * factor / (params.HSd[i]*params.HSd[i]*params.HSd[i])
                 xᵢ = ρ̄zi_i / ∑ρ̄_p
-                @inbounds for j in 1:NC
+                @inbounds @unroll for j in 1:NC
                     dip2_j = dip2[j]
                     if iszero(dip2_j); continue; end
                     ρ̄zi_j = n[kk, idx_ρz, j] * factor / (params.HSd[j]*params.HSd[j]*params.HSd[j])
                     xⱼ = ρ̄zi_j / ∑ρ̄_p
-                    @inbounds for k in 1:NC
+                    @inbounds @unroll for k in 1:NC
                         dip2_k = dip2[k]
                         if iszero(dip2_k); continue; end
                         ρ̄zi_k = n[kk, idx_ρz, k] * factor / (params.HSd[k]*params.HSd[k]*params.HSd[k])
@@ -162,12 +162,12 @@ QPCP-SAFT polar term at grid point `kk`: Padé sum of DD + QQ + DQ contributions
     # ── QQ contribution ───────────────────────────────────────────────────────
     if has_quad
         _A₂_qq = zero(FP)
-        @inbounds for i in 1:NC
+        @inbounds @unroll for i in 1:NC
             quad2_i = quad2[i]
             if iszero(quad2_i); continue; end
             ρ̄zi_i = n[kk, idx_ρz, i] * factor / (params.HSd[i]*params.HSd[i]*params.HSd[i])
             xᵢ = ρ̄zi_i / ∑ρ̄_p
-            @inbounds for j in 1:NC
+            @inbounds @unroll for j in 1:NC
                 quad2_j = quad2[j]
                 if iszero(quad2_j); continue; end
                 ρ̄zi_j = n[kk, idx_ρz, j] * factor / (params.HSd[j]*params.HSd[j]*params.HSd[j])
@@ -182,18 +182,18 @@ QPCP-SAFT polar term at grid point `kk`: Padé sum of DD + QQ + DQ contributions
 
         if !iszero(_A₂_qq)
             _A₃_qq = zero(FP)
-            @inbounds for i in 1:NC
+            @inbounds @unroll for i in 1:NC
                 quad2_i = quad2[i]
                 if iszero(quad2_i); continue; end
                 ρ̄zi_i = n[kk, idx_ρz, i] * factor / (params.HSd[i]*params.HSd[i]*params.HSd[i])
                 xᵢ = ρ̄zi_i / ∑ρ̄_p
-                @inbounds for j in 1:NC
+                @inbounds @unroll for j in 1:NC
                     quad2_j = quad2[j]
                     if iszero(quad2_j); continue; end
                     ρ̄zi_j = n[kk, idx_ρz, j] * factor / (params.HSd[j]*params.HSd[j]*params.HSd[j])
                     xⱼ = ρ̄zi_j / ∑ρ̄_p
                     σij3 = pcp_σ[i,j]*pcp_σ[i,j]*pcp_σ[i,j]
-                    @inbounds for k in 1:NC
+                    @inbounds @unroll for k in 1:NC
                         quad2_k = quad2[k]
                         if iszero(quad2_k); continue; end
                         ρ̄zi_k = n[kk, idx_ρz, k] * factor / (params.HSd[k]*params.HSd[k]*params.HSd[k])
@@ -215,12 +215,12 @@ QPCP-SAFT polar term at grid point `kk`: Padé sum of DD + QQ + DQ contributions
     # ── DQ cross contribution ─────────────────────────────────────────────────
     if has_dipole && has_quad
         _A₂_dq = zero(FP)
-        @inbounds for i in 1:NC
+        @inbounds @unroll for i in 1:NC
             dip2_i = dip2[i]
             if iszero(dip2_i); continue; end
             ρ̄zi_i = n[kk, idx_ρz, i] * factor / (params.HSd[i]*params.HSd[i]*params.HSd[i])
             xᵢ = ρ̄zi_i / ∑ρ̄_p
-            @inbounds for j in 1:NC
+            @inbounds @unroll for j in 1:NC
                 quad2_j = quad2[j]
                 if iszero(quad2_j); continue; end
                 ρ̄zi_j = n[kk, idx_ρz, j] * factor / (params.HSd[j]*params.HSd[j]*params.HSd[j])
@@ -235,17 +235,17 @@ QPCP-SAFT polar term at grid point `kk`: Padé sum of DD + QQ + DQ contributions
 
         if !iszero(_A₂_dq)
             _A₃_dq = zero(FP)
-            @inbounds for i in 1:NC
+            @inbounds @unroll for i in 1:NC
                 dip2_i = dip2[i]
                 if iszero(dip2_i); continue; end
                 ρ̄zi_i = n[kk, idx_ρz, i] * factor / (params.HSd[i]*params.HSd[i]*params.HSd[i])
                 xᵢ = ρ̄zi_i / ∑ρ̄_p
-                @inbounds for j in 1:NC
+                @inbounds @unroll for j in 1:NC
                     if iszero(dip2[j]) && iszero(quad2[j]); continue; end
                     ρ̄zi_j = n[kk, idx_ρz, j] * factor / (params.HSd[j]*params.HSd[j]*params.HSd[j])
                     xⱼ = ρ̄zi_j / ∑ρ̄_p
                     contrib_j = pcp_σ[j,j] * dip2[j] + FP(1.19374) / pcp_σ[j,j] * quad2[j]
-                    @inbounds for k in 1:NC
+                    @inbounds @unroll for k in 1:NC
                         quad2_k = quad2[k]
                         if iszero(quad2_k); continue; end
                         ρ̄zi_k = n[kk, idx_ρz, k] * factor / (params.HSd[k]*params.HSd[k]*params.HSd[k])
@@ -280,7 +280,7 @@ QQ J₂ integral kernel: no min(m̄,2) clamping (unlike DD), 5 terms.
     m2     = m1 * (1 - 2/m̄)
     result = zero(FP)
     ηn     = one(FP)
-    for n in 0:4
+    @unroll for n in 0:4
         a0, a1, a2 = corr_a[n+1]
         b0, b1, b2 = corr_b[n+1]
         result += (a0 + a1*m1 + a2*m2 + (b0 + b1*m1 + b2*m2)*ϵT) * ηn
@@ -300,7 +300,7 @@ DQ J₂ integral kernel: no min clamping, 4 terms only (DQ_consts has 4 entries)
     m2     = m1 * (1 - 2/m̄)
     result = zero(FP)
     ηn     = one(FP)
-    for n in 0:3
+    @unroll for n in 0:3
         a0, a1, a2 = corr_a[n+1]
         b0, b1, b2 = corr_b[n+1]
         result += (a0 + a1*m1 + a2*m2 + (b0 + b1*m1 + b2*m2)*ϵT) * ηn
@@ -314,12 +314,12 @@ QQ J₃ integral kernel: no min clamping, 5 terms, includes m2.
 """
 @inline function _J3_qq_kernel(mᵢ, mⱼ, mₖ, η, corr_c)
     FP     = typeof(η)
-    m̄      = cbrt(mᵢ * mⱼ * mₖ)
+    m̄      = exp(Base.log(mᵢ * mⱼ * mₖ)/3)
     m1     = 1 - 1/m̄
     m2     = m1 * (1 - 2/m̄)
     result = zero(FP)
     ηn     = one(FP)
-    for n in 0:4
+    @unroll for n in 0:4
         c0, c1, c2 = corr_c[n+1]
         result += (c0 + c1*m1 + c2*m2) * ηn
         ηn *= η
@@ -332,11 +332,11 @@ DQ J₃ integral kernel: no min clamping, 4 terms, no m2 (DQ_consts.corr_c has o
 """
 @inline function _J3_dq_kernel(mᵢ, mⱼ, mₖ, η, corr_c)
     FP     = typeof(η)
-    m̄      = cbrt(mᵢ * mⱼ * mₖ)
+    m̄      = exp(Base.log(mᵢ * mⱼ * mₖ)/3)
     m1     = 1 - 1/m̄
     result = zero(FP)
     ηn     = one(FP)
-    for n in 0:3
+    @unroll for n in 0:3
         c0, c1 = corr_c[n+1]
         result += (c0 + c1*m1) * ηn
         ηn *= η

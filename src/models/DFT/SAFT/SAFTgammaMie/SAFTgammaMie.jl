@@ -167,7 +167,7 @@ NC here is the total number of groups (sum of nbeads per component).
     # `π = FP(π)` once and using it everywhere below sidesteps the whole ordering trap.
     sg_idx = params.species_group_idx
     ρS_c  = zero(FP)
-    @inbounds for s in 1:nc_s
+    @inbounds @unroll for s in 1:nc_s
         nb_s     = _nti(nbeads_c, s)
         sg_idx_s = _nti(sg_idx, s)      # NTuple{MNB,Int} — Const to Enzyme
         ρ̄hc_s   = _chain_bead_sum(sg_idx_s, n, HSd, kk, idx_ζ_c, nb_s)
@@ -176,22 +176,22 @@ NC here is the total number of groups (sum of nbeads per component).
     kρS_c = ρS_c * π/6/8
 
     ρhc_gc_total = zero(FP)
-    @inbounds for kg in 1:NC
+    @inbounds @unroll for kg in 1:NC
         ρhc_gc_total += n[kk, 1, kg]
     end
     m̄_gc = zero(FP)
-    @inbounds for kg in 1:NC
+    @inbounds @unroll for kg in 1:NC
         z_gc_kg = n[kk, 1, kg] / ρhc_gc_total
         m̄_gc += z_gc_kg * meff[kg]
     end
     m̄inv_gc = 1/m̄_gc
 
     ζ_Xc = zero(FP);  σ3_xc = zero(FP)
-    @inbounds for i in 1:NC
+    @inbounds @unroll for i in 1:NC
         z_gc_i = n[kk, 1, i] / ρhc_gc_total
         x_Si_c = z_gc_i * meff[i] * m̄inv_gc
         di_c   = HSd[i]
-        @inbounds for j in 1:NC
+        @inbounds @unroll for j in 1:NC
             z_gc_j = n[kk, 1, j] / ρhc_gc_total
             x_Sj_c = z_gc_j * meff[j] * m̄inv_gc
             dj_c   = HSd[j]
@@ -203,7 +203,7 @@ NC here is the total number of groups (sum of nbeads per component).
     _KHSc, _∂KHSc = _KHS_fdf_kernel(ρS_c, ζ_Xc)
 
     res_chain = zero(FP)
-    @inbounds for s in 1:nc_s
+    @inbounds @unroll for s in 1:nc_s
         nb_s     = _nti(nbeads_c, s)
         sg_idx_s = _nti(sg_idx, s)          # NTuple{MNB,Int} — Const to Enzyme
         ρhc_s    = _chain_ρhc_s(sg_idx_s, n, kk, nb_s)
@@ -262,7 +262,7 @@ end
 @inline function _chain_bead_sum(sg_idx_s::NTuple{MNB, Int}, n, HSd, kk, field_idx, nb_s) where MNB
     FP  = eltype(n)
     acc = zero(FP)
-    @inbounds for j in 1:MNB        # MNB from WHERE clause → compile-time
+    @inbounds @unroll for j in 1:MNB        # MNB from WHERE clause → compile-time
         if j <= nb_s                 # nb_s is runtime but MNB (bound) is compile-time
             kg = _nti(sg_idx_s, j)
             dg = HSd[kg]
@@ -275,7 +275,7 @@ end
 @inline function _chain_ρhc_s(sg_idx_s::NTuple{MNB, Int}, n, kk, nb_s) where MNB
     FP  = eltype(n)
     acc = zero(FP)
-    @inbounds for j in 1:MNB        # MNB from WHERE clause → compile-time
+    @inbounds @unroll for j in 1:MNB        # MNB from WHERE clause → compile-time
         j <= nb_s || continue
         acc += n[kk, 1, _nti(sg_idx_s, j)]
     end
@@ -290,15 +290,15 @@ end
     FP = eltype(n)
     p > n_pairs && return zero(FP)
     ρS = zero(FP)
-    @inbounds for k in 1:NC
+    @inbounds @unroll for k in 1:NC
         ρS += n[kk, 3, k] * 6 / (π * params.HSd[k]^3) * params.meff[k]
     end
     σ3_x = zero(FP)
-    @inbounds for k in 1:NC
+    @inbounds @unroll for k in 1:NC
         ρ̄k  = n[kk, 3, k] * 6 / (π * params.HSd[k]^3)
         xSk = ρ̄k * params.meff[k] / ρS
         σ3_x += xSk * xSk * params.sigma[k,k]^3
-        @inbounds for l in 1:(k-1)
+        @inbounds @unroll for l in 1:(k-1)
             ρ̄l  = n[kk, 3, l] * 6 / (π * params.HSd[l]^3)
             xSl = ρ̄l * params.meff[l] / ρS
             σ3_x += 2 * xSk * xSl * params.sigma[k,l]^3
@@ -309,9 +309,9 @@ end
     js = _nti(params.assoc_jspec, p)
     Tr = T / params.epsilon_species[is, js]
     I_val = zero(FP); ρrn = one(FP)
-    for ni in 0:10
+    @unroll for ni in 0:10
         row = _nti(params.VRMie_c, ni + 1); Trm = one(FP)
-        for mi in 0:10
+        @unroll for mi in 0:10
             I_val += _nti(row, mi + 1) * Trm * ρrn; Trm *= Tr
         end
         ρrn *= ρr

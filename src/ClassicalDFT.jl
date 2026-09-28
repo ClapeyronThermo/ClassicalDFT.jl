@@ -29,6 +29,7 @@ using Clapeyron: SingleComp, PeTSModel, epsilon_LorentzBerthelot!
 using StaticArrays
 # using SIAMFANLEquations
 using KernelAbstractions, Adapt, Enzyme
+using KernelAbstractions.Extras: @unroll
 using Hankel
 using SpecialFunctions
 using Random

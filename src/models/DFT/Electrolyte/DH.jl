@@ -177,7 +177,7 @@ dimensionless product `dh_term` depends on — stays correct.
     _ϵ0   = FP(ϵ_0)
 
     I = zero(FP)
-    @inbounds for i in 1:NC
+    @inbounds @unroll for i in 1:NC
         Zi = _nti(params.dh_Z, i)
         wi = _nti(params.dh_width, i)
         ρi = n[kk, F_dh, i] / (wi * 2) / _NA
@@ -188,7 +188,7 @@ dimensionless product `dh_term` depends on — stays correct.
     κ  = sqrt(s0 * FP(N_A) * I)
 
     res = zero(FP)
-    @inbounds for i in 1:NC
+    @inbounds @unroll for i in 1:NC
         Zi = _nti(params.dh_Z, i)
         wi = _nti(params.dh_width, i)
         σi = _nti(params.dh_sigma, i)

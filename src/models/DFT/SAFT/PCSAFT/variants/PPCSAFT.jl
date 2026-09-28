@@ -72,7 +72,7 @@ Takes `m̄` and `ηd` from f_disp output.
     cc    = params.dd_c
 
     has_polar = false
-    @inbounds for i in 1:NC
+    @inbounds @unroll for i in 1:NC
         if !iszero(dip2[i]); has_polar = true; break; end
     end
 
@@ -85,17 +85,17 @@ Takes `m̄` and `ηd` from f_disp output.
         idx_ρz  = 6 + ND
         factor  = 3 / (4*ψ*ψ*ψ*_π)
         ∑ρ̄_p = zero(FP)
-        @inbounds for i in 1:NC
+        @inbounds @unroll for i in 1:NC
             ∑ρ̄_p += n[kk, idx_ρz, i] * factor / (params.HSd[i]*params.HSd[i]*params.HSd[i])
         end
 
         _A₂ = zero(FP)
-        @inbounds for i in 1:NC
+        @inbounds @unroll for i in 1:NC
             dip2_i = dip2[i]
             if iszero(dip2_i); continue; end
             ρ̄zi_i = n[kk, idx_ρz, i] * factor / (params.HSd[i]*params.HSd[i]*params.HSd[i])
             xᵢ = ρ̄zi_i / ∑ρ̄_p
-            @inbounds for j in 1:NC
+            @inbounds @unroll for j in 1:NC
                 dip2_j = dip2[j]
                 if iszero(dip2_j); continue; end
                 ρ̄zi_j = n[kk, idx_ρz, j] * factor / (params.HSd[j]*params.HSd[j]*params.HSd[j])
@@ -109,17 +109,17 @@ Takes `m̄` and `ηd` from f_disp output.
 
         if abs(_A₂) > 0
             _A₃ = zero(FP)
-            @inbounds for i in 1:NC
+            @inbounds @unroll for i in 1:NC
                 dip2_i = dip2[i]
                 if iszero(dip2_i); continue; end
                 ρ̄zi_i = n[kk, idx_ρz, i] * factor / (params.HSd[i]*params.HSd[i]*params.HSd[i])
                 xᵢ = ρ̄zi_i / ∑ρ̄_p
-                @inbounds for j in 1:NC
+                @inbounds @unroll for j in 1:NC
                     dip2_j = dip2[j]
                     if iszero(dip2_j); continue; end
                     ρ̄zi_j = n[kk, idx_ρz, j] * factor / (params.HSd[j]*params.HSd[j]*params.HSd[j])
                     xⱼ = ρ̄zi_j / ∑ρ̄_p
-                    @inbounds for k in 1:NC
+                    @inbounds @unroll for k in 1:NC
                         dip2_k = dip2[k]
                         if iszero(dip2_k); continue; end
                         ρ̄zi_k = n[kk, idx_ρz, k] * factor / (params.HSd[k]*params.HSd[k]*params.HSd[k])
@@ -148,7 +148,7 @@ end
     m2  = m1 * (1 - 2/m̄)
     result = zero(FP)
     ηn = one(FP)
-    for n in 0:4
+    @unroll for n in 0:4
         a0, a1, a2 = corr_a[n+1]
         b0, b1, b2 = corr_b[n+1]
         result += (a0 + a1*m1 + a2*m2 + (b0 + b1*m1 + b2*m2)*ϵT) * ηn
@@ -159,12 +159,12 @@ end
 
 @inline function _J3_kernel(mᵢ, mⱼ, mₖ, η, corr_c)
     FP  = typeof(η)
-    m̄   = min(cbrt(mᵢ * mⱼ * mₖ), 2)
+    m̄   = min(exp(Base.log(mᵢ * mⱼ * mₖ)/3), 2)
     m1  = 1 - 1/m̄
     m2  = m1 * (1 - 2/m̄)
     result = zero(FP)
     ηn = one(FP)
-    for n in 0:4
+    @unroll for n in 0:4
         c0, c1, c2 = corr_c[n+1]
         result += (c0 + c1*m1 + c2*m2) * ηn
         ηn *= η

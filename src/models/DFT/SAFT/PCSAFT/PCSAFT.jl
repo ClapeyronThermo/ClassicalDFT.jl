@@ -126,14 +126,14 @@ Field layout assumed: field 1 = ρ (unweighted), field 4+ND = ρ̄hc, field 5+ND
     HSd = params.HSd
     idx_ζ = 4 + ND;  idx_λ = 5 + ND
     ζ₃=zero(FP); ζ₂=zero(FP)
-    @inbounds for i in 1:NC
+    @inbounds @unroll for i in 1:NC
         mi=m[i]; di=HSd[i]; ρ̄hci=n[kk, idx_ζ, i]
         ζ₃ += mi * ρ̄hci;  ζ₂ += mi * ρ̄hci / di
     end
     ζ₃ /= 8;  ζ₂ /= 8
     inv1ζ₃ = one(FP)/(one(FP)-ζ₃)
     res_hc = zero(FP)
-    @inbounds for i in 1:NC
+    @inbounds @unroll for i in 1:NC
         ρi  = n[kk, 1, i]
         λ   = n[kk, idx_λ, i] / (2*HSd[i])
         ydd = inv1ζ₃ + FP(1.5)*HSd[i]*ζ₂*inv1ζ₃*inv1ζ₃ +
@@ -162,7 +162,7 @@ Returns `(res_disp, m̄, ηd)` — m̄ and ηd are reused by PCP-SAFT for the po
     factor = 3 / (4*ψ*ψ*ψ*_π)
 
     ρ̄z_sum=zero(FP); m̄_top=zero(FP); η_sum=zero(FP)
-    @inbounds for i in 1:NC
+    @inbounds @unroll for i in 1:NC
         ρ̄zi = n[kk, idx_ρz, i] * factor / (HSd[i]*HSd[i]*HSd[i])
         ρ̄z_sum += ρ̄zi
         m̄_top  += ρ̄zi * m[i]
@@ -172,9 +172,9 @@ Returns `(res_disp, m̄, ηd)` — m̄ and ηd are reused by PCP-SAFT for the po
     ηd = η_sum * _π / 6
 
     m2ϵσ3_1=zero(FP); m2ϵσ3_2=zero(FP)
-    @inbounds for i in 1:NC
+    @inbounds @unroll for i in 1:NC
         ρzi = n[kk, idx_ρz, i] * factor / (HSd[i]*HSd[i]*HSd[i])
-        @inbounds for j in 1:NC
+        @inbounds @unroll for j in 1:NC
             ρzj  = n[kk, idx_ρz, j] * factor / (HSd[j]*HSd[j]*HSd[j])
             cij  = ρzi * ρzj * m[i] * m[j] * sigma[i,j]*sigma[i,j]*sigma[i,j]
             eT   = epsilon[i,j] / T
