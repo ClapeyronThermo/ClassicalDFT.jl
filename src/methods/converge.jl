@@ -99,6 +99,47 @@ cDFTProblem(system::Union{DFTSystem,DGTSystem,ElectrolyteDFTSystem};kwargs...) =
 cDFTProblem(system::SCFTSystem;kwargs...) = SCFTProblem(system;kwargs...)
 
 """
+    impose_electroneutrality!(structure, external_field, model::ElectrolyteModel, ρ)
+
+Rescales every species' density profile in-place by a single, spatially-
+uniform Boltzmann factor `exp(-Zₖψ)` -- the same device `find_ψ_const`
+itself solves for -- so that `ρ` satisfies the domain-integrated
+electroneutrality constraint `Σₖ Zₖ∫ρₖ dx = 0` exactly (to `find_ψ_const`'s
+own tolerance), regardless of what state it was in beforehand.
+
+Needed because `converge!`'s `aasol` driver mixes in log-density space
+(`ln_X0 = vec(log.(ρ))`), so its documented update `x ← (1-β)x + β G(x)` is
+linear in `log(ρ)` -- i.e. a per-gridpoint *geometric* interpolation in
+ρ-space. Electroneutrality is a *linear* functional of ρ, so a geometric
+mixture of two individually-neutral profiles is generically not itself
+neutral: for a genuinely net-charged system this drift compounds every
+iteration (confirmed directly during the LS integration: uncorrected total
+system charge grew from ~0 to +662 after the very first mixing step, past
++20000 within ~7), even though `get_new_profile!`'s own correction below
+already makes every single map *output* exactly neutral in isolation --
+that alone only fixes the candidate `aasol` is shown each step, not the
+iterate it actually mixes.
+
+Calling this on the *incoming* `ρ` at the top of `get_new_profile!` (in
+addition to the existing correction on the outgoing candidate) keeps the
+propagator/functional-derivative machinery from ever seeing a badly
+non-neutral state, regardless of how many iterations run -- this requires
+no change to `aasol`/`converge!`/`propagate!` themselves: `aasol` never
+reads `ρ` directly (only the log-density iterate it maintains internally),
+so this is entirely a property of what physical state `get_new_profile!`
+chooses to compute the residual from.
+"""
+function impose_electroneutrality!(structure::DFTStructure, external_field::ElectrostaticPotentialModel, model::ElectrolyteModel, ρ)
+    Z = model.charge
+    nd = length(structure.ngrid)
+    ψ = find_ψ_const(structure, external_field, model, ρ) / k_B / structure.conditions[2]
+    for k in eachindex(Z)
+        selectdim(ρ, nd + 1, k) .*= exp(-ψ * Z[k])
+    end
+    return ρ
+end
+
+"""
     get_new_profile!(system, ρ, δfδρ_res, caches)
 
 One DFT-family fixed-point step: given the current density profile `ρ`:
@@ -112,6 +153,15 @@ function get_new_profile!(system::Union{DFTSystem,DGTSystem,ElectrolyteDFTSystem
     nd = dimension(system)
     species = system.species
     model = system.model
+
+    has_ep = any(typeof.(system.external_field) .<: ElectrostaticPotentialModel)
+    ep_model = has_ep ? filter(x -> x isa ElectrostaticPotentialModel, system.external_field)[1] : nothing
+
+    # Re-impose electroneutrality on the INCOMING ρ before any physics runs on
+    # it -- see impose_electroneutrality!'s docstring for why log-space
+    # mixing needs this in addition to the existing outgoing-candidate
+    # correction below.
+    has_ep && impose_electroneutrality!(system.structure, ep_model, model, ρ)
 
     δFδρ_res!(system, ρ, δfδρ_res, cache_model...)
 
@@ -136,8 +186,7 @@ function get_new_profile!(system::Union{DFTSystem,DGTSystem,ElectrolyteDFTSystem
         end
     end
 
-    if any(typeof.(system.external_field) .<: ElectrostaticPotentialModel)
-        ep_model = filter(x -> x isa ElectrostaticPotentialModel, system.external_field)[1]
+    if has_ep
         Z = model.charge
 
         psi_c = find_ψ_const(system.structure, ep_model, model, exp.(ln_Gx))/k_B/system.structure.conditions[2]

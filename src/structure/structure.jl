@@ -59,7 +59,28 @@ function initialize_profiles(system::AbstractcDFTSystem; noise::Real=0.0)
         end
 
         if any(typeof.(system.external_field) .<: ElectrostaticPotentialModel)
-            ψ = find_ψ_const(system.structure, system.external_field[findfirst(typeof.(system.external_field) .<: ElectrostaticPotentialModel)], system.model, ρ) ./ k_B / system.structure.conditions[2]
+            ep_idx = findfirst(typeof.(system.external_field) .<: ElectrostaticPotentialModel)
+            ef = system.external_field[ep_idx]
+
+            # A two-phase electrolyte system whose two bulk phases sit at
+            # different electrochemical (Donnan) potentials needs a LOCAL
+            # charge-layer correction seeding that structure -- the naive
+            # per-component tanh IC built above has identically zero local
+            # charge everywhere by construction (see
+            # `impose_donnan_structure!`'s docstring), which is the wrong
+            # topology to relax from. This is independent of, and applied
+            # before, the domain-INTEGRATED electroneutrality correction
+            # just below (a single global constant zeroing the box's TOTAL
+            # charge, not the local structure a genuine potential jump
+            # requires); the two don't conflict since this correction is
+            # itself already domain-charge-neutral by construction (the
+            # periodic tanh derivative it's built from integrates to zero
+            # over one period).
+            if system.model isa ElectrolyteModel && system.structure isa DFTStructure{1,Cartesian,TwoPhaseSystem{:Cartesian}}
+                impose_donnan_structure!(system.structure, ef, system.model, ρ)
+            end
+
+            ψ = find_ψ_const(system.structure, ef, system.model, ρ) ./ k_B / system.structure.conditions[2]
             # system.model.charge is a plain Vector{Int64} on Clapeyron's ElectrolyteModel
             # struct, never adapted to the system's device — broadcasting it directly
             # against ψ (GPU-resident, since it's built from ρ) fails GPU compilation

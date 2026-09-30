@@ -2,6 +2,7 @@ import Clapeyron: ElectrolyteModel
 
 include("electrostatic_potential.jl")
 include("DH.jl")
+include("LS.jl")
 
 
 function ElectrolyteDFTSystem(model::ElectrolyteModel, structure::DFTStructure, external_field::ExternalFieldModel, options::DFTOptions = DFTOptions())

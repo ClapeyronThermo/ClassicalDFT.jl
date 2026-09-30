@@ -70,8 +70,14 @@ Shared by group-contribution `DFTSpecies` constructors (`SAFTgammaMieSpecies`,
 `DiscreteGaussianChainPropagator`) needs a tree traversal order.
 """
 function compute_levels(model::EoSModel)
-    nbeads = length.(model.groups.groups)
-    levels = zeros(Int, sum(nbeads))
+    # Sized to the GLOBAL flattened-group count, not `sum(length.(model.groups.groups))`
+    # (each component's own *distinct* group count summed): those only coincide when no
+    # group is shared by name across components. Real group-contribution models routinely
+    # DO share groups across components (e.g. two alkanes both using "CH2"/"CH3") -- this
+    # was previously only safe for single-component systems, where no cross-component
+    # sharing is possible by construction. `i_groups`/`n_intergroups[i]` (used below) are
+    # already correctly GLOBAL-indexed/-sized; only this array's own size was wrong.
+    levels = zeros(Int, length(model.groups.flattenedgroups))
 
     for i in @comps
         i_groups = model.groups.i_groups[i]
