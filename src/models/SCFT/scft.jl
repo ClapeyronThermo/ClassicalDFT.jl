@@ -759,3 +759,5 @@ surface_tension(::SCFTSystem, ρ) = error(
 )
 
 export SCFTSystem
+
+include("sequence.jl")

@@ -109,17 +109,17 @@ SAFT-VR Mie chain contribution (gMie contact value) at grid point `kk`.
     idx_ζ = 4+ND;  idx_λ = 5+ND
 
     ρS_c = zero(FP)
-    @inbounds for i in 1:NC
+    @inbounds @unroll for i in 1:NC
         ρS_c += n[kk,idx_ζ,i] * 3/(4*(π*HSd[i]^3)) * m_seg[i]
     end
     kρS_c = ρS_c * π/6/8
 
     ζ_Xc = zero(FP);  σ3_xc = zero(FP)
-    @inbounds for i in 1:NC
+    @inbounds @unroll for i in 1:NC
         di   = HSd[i]
         ρ̄hci = n[kk,idx_ζ,i] * 3/(4*(π*di^3))
         x_Si = ρ̄hci * m_seg[i] / ρS_c
-        @inbounds for j in 1:NC
+        @inbounds @unroll for j in 1:NC
             dj   = HSd[j]
             ρ̄hcj = n[kk,idx_ζ,j] * 3/(4*(π*dj^3))
             x_Sj = ρ̄hcj * m_seg[j] / ρS_c
@@ -132,7 +132,7 @@ SAFT-VR Mie chain contribution (gMie contact value) at grid point `kk`.
     _KHSc, _∂KHSc = _KHS_fdf_kernel(ρS_c, ζ_Xc)
 
     res_chain = zero(FP)
-    @inbounds for i in 1:NC
+    @inbounds @unroll for i in 1:NC
         di   = HSd[i]
         ρ̄hci = n[kk,idx_ζ,i] * 3/(4*(π*di^3))
         x_Si = ρ̄hci * m_seg[i] / ρS_c
@@ -285,14 +285,14 @@ const SAFTVRMIE_PHI = (
     fa1=zero(T);fa2=zero(T);fa3=zero(T);fa4=zero(T);fa5=zero(T);fa6=zero(T)
     fb1=zero(T);fb2=zero(T);fb3=zero(T);fb4=zero(T);fb5=zero(T);fb6=zero(T)
     αi = one(T)
-    for i in 1:4
+    @unroll for i in 1:4
         p = ϕ[i]
         fa1+=p[1]*αi; fa2+=p[2]*αi; fa3+=p[3]*αi
         fa4+=p[4]*αi; fa5+=p[5]*αi; fa6+=p[6]*αi
         αi *= α
     end
     αi = α
-    for i in 5:7
+    @unroll for i in 5:7
         p = ϕ[i]
         fb1+=p[1]*αi; fb2+=p[2]*αi; fb3+=p[3]*αi
         fb4+=p[4]*αi; fb5+=p[5]*αi; fb6+=p[6]*αi
@@ -322,17 +322,17 @@ Used by SAFTVRMieModel, SAFTgammaMieModel, COFFEEModel.
     phi      = params.phi
     FP = eltype(n)
     ρS_d = zero(FP)
-    @inbounds for i in 1:NC
+    @inbounds @unroll for i in 1:NC
         ρS_d += n[kk, IDX_ρz, i] * 3/(4*(π*psi_eff[i]^3)) * meff[i]
     end
     kρS_d = ρS_d * π/6/8
 
     ζ_Xd=zero(FP);  σ3_xd=zero(FP)
-    @inbounds for i in 1:NC
+    @inbounds @unroll for i in 1:NC
         di   = HSd[i]
         ρ̄zi  = n[kk, IDX_ρz, i] * 3/(4*(π*psi_eff[i]^3))
         x_Si = ρ̄zi * meff[i] / ρS_d
-        @inbounds for j in 1:NC
+        @inbounds @unroll for j in 1:NC
             dj   = HSd[j]
             ρ̄zj  = n[kk, IDX_ρz, j] * 3/(4*(π*psi_eff[j]^3))
             x_Sj = ρ̄zj * meff[j] / ρS_d
@@ -345,7 +345,7 @@ Used by SAFTVRMieModel, SAFTgammaMieModel, COFFEEModel.
     KHSd  = _KHS_kernel(ζ_Xd)
 
     a₁=zero(FP);  a₂=zero(FP);  a₃=zero(FP)
-    @inbounds for i in 1:NC
+    @inbounds @unroll for i in 1:NC
         di   = HSd[i]
         ρ̄zi  = n[kk, IDX_ρz, i] * 3/(4*(π*psi_eff[i]^3))
         x_Si = ρ̄zi * meff[i] / ρS_d
@@ -366,7 +366,7 @@ Used by SAFTVRMieModel, SAFTgammaMieModel, COFFEEModel.
              + x0^(2*λr)*(aS1_2r+B_2r))
         a3ij = -ϵii^3*f4*ζstd*exp(f5*ζstd+f6*ζstd^2)
         a₁ += a1ij*x_Si*x_Si;  a₂ += a2ij*x_Si*x_Si;  a₃ += a3ij*x_Si*x_Si
-        @inbounds for j in 1:NC
+        @inbounds @unroll for j in 1:NC
             if j != i
                 dj    = HSd[j]
                 ρ̄zj   = n[kk, IDX_ρz, j] * 3/(4*(π*psi_eff[j]^3))
@@ -406,17 +406,17 @@ end
 
     # Compute ρS from individual n₃ fields (field index 3 = F2+1)
     ρS = zero(FP)
-    @inbounds for k in 1:NC
+    @inbounds @unroll for k in 1:NC
         ρS += n[kk, 3, k] * 6 / (π * params.HSd[k]^3) * params.m[k]
     end
 
     # σ³_x double loop: x_Sk = ρ̄k * m[k] / ρS
     σ3_x = zero(FP)
-    @inbounds for k in 1:NC
+    @inbounds @unroll for k in 1:NC
         ρ̄k  = n[kk, 3, k] * 6 / (π * params.HSd[k]^3)
         xSk = ρ̄k * params.m[k] / ρS
         σ3_x += xSk * xSk * params.sigma[k,k]^3
-        @inbounds for l in 1:(k-1)
+        @inbounds @unroll for l in 1:(k-1)
             ρ̄l  = n[kk, 3, l] * 6 / (π * params.HSd[l]^3)
             xSl = ρ̄l * params.m[l] / ρS
             σ3_x += 2 * xSk * xSl * params.sigma[k,l]^3
@@ -431,10 +431,10 @@ end
     # I(Tr, ρr): c stored as NTuple{11, NTuple{11, FP}} (row = n-index, col = m-index)
     I_val = zero(FP)
     ρrn   = one(FP)
-    for ni in 0:10
+    @unroll for ni in 0:10
         row = _nti(params.VRMie_c, ni + 1)
         Trm = one(FP)
-        for mi in 0:10
+        @unroll for mi in 0:10
             I_val += _nti(row, mi + 1) * Trm * ρrn
             Trm *= Tr
         end

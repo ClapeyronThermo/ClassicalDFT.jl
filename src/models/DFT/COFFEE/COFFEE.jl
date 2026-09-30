@@ -80,7 +80,7 @@ Field layout (5 fields):
     cb3   = params.coffee_b3;  cc3 = params.coffee_c3
 
     ∑ρ̄_ff = zero(FP);  η_ff = zero(FP)
-    @inbounds for i in 1:NC
+    @inbounds @unroll for i in 1:NC
         di    = HSd[i]
         ρ̄i_ff = n[kk,idx_ff,i] * 3/(4*ψff^3*π*di*di*di)
         ∑ρ̄_ff += ρ̄i_ff
@@ -89,20 +89,20 @@ Field layout (5 fields):
     η_ff *= π/6
 
     has_polar = false
-    @inbounds for i in 1:NC
+    @inbounds @unroll for i in 1:NC
         if !iszero(dip2[i]); has_polar = true; break; end
     end
 
     res_polar = zero(FP)
     if has_polar
         _A₂ = zero(FP)
-        @inbounds for i in 1:NC
+        @inbounds @unroll for i in 1:NC
             d2i = dip2[i]; if iszero(d2i); continue; end
             ρ̄i = n[kk,idx_ff,i] * 3/(4*ψff^3*π*HSd[i]^3)
             xi = ρ̄i / ∑ρ̄_ff
             J2ii = _J2_coffee_kernel(pcp_ϵ[i,i], η_ff, T, cb2, cc2)
             _A₂ += xi*xi * d2i*d2i / (pcp_σ[i,i]*pcp_σ[i,i]*pcp_σ[i,i]) * J2ii
-            @inbounds for j in (i+1):NC
+            @inbounds @unroll for j in (i+1):NC
                 d2j = dip2[j]; if iszero(d2j); continue; end
                 ρ̄j = n[kk,idx_ff,j] * 3/(4*ψff^3*π*HSd[j]^3)
                 xj = ρ̄j / ∑ρ̄_ff
@@ -115,14 +115,14 @@ Field layout (5 fields):
 
         if abs(_A₂) > 0
             _A₃ = zero(FP)
-            @inbounds for i in 1:NC
+            @inbounds @unroll for i in 1:NC
                 d2i = dip2[i]; if iszero(d2i); continue; end
                 ρ̄i = n[kk,idx_ff,i] * 3/(4*ψff^3*π*HSd[i]^3)
                 xi  = ρ̄i / ∑ρ̄_ff
                 a3i = xi * d2i / pcp_σ[i,i]
                 J3iii = _J3_coffee_kernel(pcp_ϵ[i,i], η_ff, T, cb3, cc3)
                 _A₃ += a3i*a3i*a3i * J3iii
-                @inbounds for j in (i+1):NC
+                @inbounds @unroll for j in (i+1):NC
                     d2j = dip2[j]; if iszero(d2j); continue; end
                     ρ̄j = n[kk,idx_ff,j] * 3/(4*ψff^3*π*HSd[j]^3)
                     xj   = ρ̄j / ∑ρ̄_ff
@@ -132,7 +132,7 @@ Field layout (5 fields):
                     J3iij = _J3_coffee_kernel(pcp_ϵ[i,j], η_ff, T, cb3, cc3)
                     J3ijj = _J3_coffee_kernel(pcp_ϵ[i,j], η_ff, T, cb3, cc3)
                     _A₃ += 3*a3iij*a3ijj*(a3i*J3iij + a3j*J3ijj)
-                    @inbounds for kk2 in (j+1):NC
+                    @inbounds @unroll for kk2 in (j+1):NC
                         d2k = dip2[kk2]; if iszero(d2k); continue; end
                         ρ̄k = n[kk,idx_ff,kk2] * 3/(4*ψff^3*π*HSd[kk2]^3)
                         xk  = ρ̄k / ∑ρ̄_ff

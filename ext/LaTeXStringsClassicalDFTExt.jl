@@ -1,4 +1,4 @@
-module LaTeXStringscDFTExt
+module LaTeXStringsClassicalDFTExt
 
 using ClassicalDFT
 using LaTeXStrings

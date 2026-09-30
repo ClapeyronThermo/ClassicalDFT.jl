@@ -1,4 +1,4 @@
-module PlotscDFTExt
+module PlotsClassicalDFTExt
 
 using ClassicalDFT
 using Plots

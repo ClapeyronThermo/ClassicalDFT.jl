@@ -1,4 +1,4 @@
-module SciMLBasecDFTExt
+module SciMLBaseClassicalDFTExt
     import ClassicalDFT
     import SciMLBase
     import KernelAbstractions as KA

@@ -87,7 +87,7 @@ PeTS Barker–Henderson perturbation contribution at grid point `kk`.
     T̄     = T / ϵ[1]
     idx_ρ̄ = 3 + ND
     ρ̃     = zero(FP); η_sum = zero(FP); ∑ρ̄ = zero(FP)
-    @inbounds for i in 1:NC
+    @inbounds @unroll for i in 1:NC
         ρ̄zi  = n[kk, idx_ρ̄, i] * 3 / (4*ψ*ψ*ψ*HSd[i]*HSd[i]*HSd[i]*π)
         ρ̃    += ρ̄zi * m[i] * σ[i]*σ[i]*σ[i]
         η_sum += ρ̄zi * m[i] * HSd[i]*HSd[i]*HSd[i]
@@ -98,7 +98,7 @@ PeTS Barker–Henderson perturbation contribution at grid point `kk`.
     I2    = evalpoly(η, params.PeTS_B)
     ã1    = -2*(π*ρ̃*I1 / T̄)
     inv_g = 1 / (1 + 2*η*(4 - η) / (1 - η)^4)
-    ã2    = -π*ρ̃*I2*inv_g / (T̄*T̄)
+    ã2    = -(π*ρ̃*I2*inv_g) / (T̄*T̄)
     return (ã1 + ã2) * ∑ρ̄
 end
 

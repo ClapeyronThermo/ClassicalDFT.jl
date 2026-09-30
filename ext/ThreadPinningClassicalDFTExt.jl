@@ -1,4 +1,4 @@
-module ThreadPinningcDFTExt
+module ThreadPinningClassicalDFTExt
 
 using ClassicalDFT
 using ThreadPinning

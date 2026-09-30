@@ -23,7 +23,7 @@ Extra moments are needed by COFFEE's near-field polar term.
     nv2_1=zero(T); nv2_2=zero(T); nv2_3=zero(T)
 
     _2π = T(2π)
-    @inbounds for i in 1:NC
+    @inbounds @unroll for i in 1:NC
         mi = meff[i]; di = HSd[i]
         nim = n[kk, F2, i] * mi
         n₀  += nim / di;  n₁ += T(0.5)*nim;  n₂ += π*nim*di

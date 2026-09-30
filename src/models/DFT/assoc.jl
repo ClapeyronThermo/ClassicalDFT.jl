@@ -177,6 +177,7 @@ end
 @generated function _assoc_n0(n, kk, params, ::Val{NC}) where NC
     stmts = [:($(Symbol("_n0_$i")) = n[kk, 2, $i] / params.HSd[$i]) for i in 1:NC]
     return quote
+        $(Expr(:meta, :inline))   # must inline on Metal: see _assoc_solve
         $(stmts...)
         tuple($([ Symbol("_n0_$i") for i in 1:NC ]...))
     end
@@ -213,6 +214,7 @@ end
         push!(stmts, :($xiv = $o - $sqv / ($n2v * $n2v)))
     end
     return quote
+        $(Expr(:meta, :inline))   # must inline on Metal: see _assoc_solve
         $(stmts...)
         tuple($([ Symbol("_xi_$i") for i in 1:NC ]...))
     end
@@ -229,22 +231,22 @@ function _xi_mix_at(n, kk, params, ::Val{NC}, ::Val{ND}) where {NC, ND}
     FP  = eltype(n)
     _2π = FP(2π)
     n2_mix = zero(FP); nv2sq_mix = zero(FP)
-    @inbounds for i in 1:NC
+    @inbounds @unroll for i in 1:NC
         n2_mix += π * n[kk, F2, i] * params.m[i] * params.HSd[i]
     end
     if ND >= 1
         nv2d = zero(FP)
-        @inbounds for i in 1:NC; nv2d -= _2π * n[kk, FV,   i] * params.m[i]; end
+        @inbounds @unroll for i in 1:NC; nv2d -= _2π * n[kk, FV,   i] * params.m[i]; end
         nv2sq_mix += nv2d * nv2d
     end
     if ND >= 2
         nv2d = zero(FP)
-        @inbounds for i in 1:NC; nv2d -= _2π * n[kk, FV+1, i] * params.m[i]; end
+        @inbounds @unroll for i in 1:NC; nv2d -= _2π * n[kk, FV+1, i] * params.m[i]; end
         nv2sq_mix += nv2d * nv2d
     end
     if ND >= 3
         nv2d = zero(FP)
-        @inbounds for i in 1:NC; nv2d -= _2π * n[kk, FV+2, i] * params.m[i]; end
+        @inbounds @unroll for i in 1:NC; nv2d -= _2π * n[kk, FV+2, i] * params.m[i]; end
         nv2sq_mix += nv2d * nv2d
     end
     return one(FP) - nv2sq_mix / (n2_mix * n2_mix)
@@ -303,6 +305,7 @@ end
                                                   Val($NC), Val($ND), M))
              for p in 1:NP]
     return quote
+        $(Expr(:meta, :inline))   # must inline on Metal: see _assoc_solve
         $(stmts...)
         tuple($([ Symbol("_Δ$p") for p in 1:NP ]...))
     end
@@ -350,6 +353,7 @@ end
     end
     result = :(tuple($([ Symbol("blend_$s") for s in 1:NS ]...)))
     return quote
+        $(Expr(:meta, :inline))   # must inline on Metal: see _assoc_solve
         $(stmts...)
         $result
     end
@@ -464,6 +468,7 @@ end
     end
 
     return quote
+        $(Expr(:meta, :inline))   # must inline on Metal: see _assoc_solve
         $(stmts...)
         tuple($(res...))
     end
@@ -481,8 +486,10 @@ end
                                ::Val{NS}) where {NC, NP, NS}
     FP = eltype(n0)
     X = _assoc_X0(Val(NS), FP)
-    for _ in 1:5*NS; X = _assoc_SS_step(X, n0, xi, Δ_vals, params); end
-    for _ in 1:5*NS; X = _assoc_newton_step(X, n0, xi, Δ_vals, params); end
+    # Metal: Enzyme's reverse pass drops the adjoint of a tuple returned by a non-inlined
+    # call, so the step helpers force-inline and these loops fully unroll (no heap cache).
+    @unroll for _ in 1:5*NS; X = _assoc_SS_step(X, n0, xi, Δ_vals, params); end
+    @unroll for _ in 1:5*NS; X = _assoc_newton_step(X, n0, xi, Δ_vals, params); end
     X
 end
 
@@ -784,24 +791,24 @@ heap allocation.
     n2_mix    = zero(FP)
     n3_mix    = zero(FP)
     nv2sq_mix = zero(FP)
-    @inbounds for i in 1:NC
+    @inbounds @unroll for i in 1:NC
         nim = n[kk, F2, i] * params.m[i]
         n2_mix += π * nim * params.HSd[i]
         n3_mix += n[kk, F2+1, i] * params.m[i]
     end
     if ND >= 1
         nv2d = zero(FP)
-        @inbounds for i in 1:NC; nv2d -= _2π * n[kk, FV,   i] * params.m[i]; end
+        @inbounds @unroll for i in 1:NC; nv2d -= _2π * n[kk, FV,   i] * params.m[i]; end
         nv2sq_mix += nv2d * nv2d
     end
     if ND >= 2
         nv2d = zero(FP)
-        @inbounds for i in 1:NC; nv2d -= _2π * n[kk, FV+1, i] * params.m[i]; end
+        @inbounds @unroll for i in 1:NC; nv2d -= _2π * n[kk, FV+1, i] * params.m[i]; end
         nv2sq_mix += nv2d * nv2d
     end
     if ND >= 3
         nv2d = zero(FP)
-        @inbounds for i in 1:NC; nv2d -= _2π * n[kk, FV+2, i] * params.m[i]; end
+        @inbounds @unroll for i in 1:NC; nv2d -= _2π * n[kk, FV+2, i] * params.m[i]; end
         nv2sq_mix += nv2d * nv2d
     end
     xi_mix = one(FP) - nv2sq_mix / (n2_mix*n2_mix)
@@ -850,24 +857,24 @@ end
 
     # Mixture FMT densities (straight-line loops, no closures)
     n2_mix = zero(FP); n3_mix = zero(FP); nv2sq_mix = zero(FP)
-    @inbounds for i in 1:NC
+    @inbounds @unroll for i in 1:NC
         nim = n[kk, F2, i] * params.m[i]
         n2_mix += π * nim * params.HSd[i]
         n3_mix += n[kk, F2+1, i] * params.m[i]
     end
     if ND >= 1
         nv2d = zero(FP)
-        @inbounds for i in 1:NC; nv2d -= _2π * n[kk, FV,   i] * params.m[i]; end
+        @inbounds @unroll for i in 1:NC; nv2d -= _2π * n[kk, FV,   i] * params.m[i]; end
         nv2sq_mix += nv2d * nv2d
     end
     if ND >= 2
         nv2d = zero(FP)
-        @inbounds for i in 1:NC; nv2d -= _2π * n[kk, FV+1, i] * params.m[i]; end
+        @inbounds @unroll for i in 1:NC; nv2d -= _2π * n[kk, FV+1, i] * params.m[i]; end
         nv2sq_mix += nv2d * nv2d
     end
     if ND >= 3
         nv2d = zero(FP)
-        @inbounds for i in 1:NC; nv2d -= _2π * n[kk, FV+2, i] * params.m[i]; end
+        @inbounds @unroll for i in 1:NC; nv2d -= _2π * n[kk, FV+2, i] * params.m[i]; end
         nv2sq_mix += nv2d * nv2d
     end
     xi_mix = one(FP) - nv2sq_mix / (n2_mix * n2_mix)
@@ -886,12 +893,13 @@ end
     # Regular for-loops + _nti: no closures, GPU-safe
     h   = FP(0.5)
     res = zero(FP)
-    for i in 1:NC
+    @unroll for i in 1:NC
         base_i = _nti(params.n_sites_cumsum, i)
         ns_i   = _nti(params.n_sites_cumsum, i + 1) - base_i
         n0i    = _nti(n0, i)
         xii    = _nti(xi, i)
-        for a in 1:ns_i
+        @unroll for a in 1:NS    # NS bound is compile-time; ns_i is runtime
+            a <= ns_i || continue
             s        = base_i + a
             n_ia_val = _nti(params.n_sites_flat, s)
             X_val    = _nti(X, s)

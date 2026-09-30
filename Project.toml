@@ -29,14 +29,14 @@ SciMLBase = "0bca4576-84f4-4d90-8ffe-ffa030f20462"
 ThreadPinning = "811555cd-349b-4f26-b7bc-1f208b848042"
 
 [extensions]
-GCIdentifierCDFTExt = "GCIdentifier"
+GCIdentifierClassicalDFTExt = "GCIdentifier"
 GCWithSearch = ["GCIdentifier", "ChemicalIdentifiers"]
-LaTeXStringscDFTExt = "LaTeXStrings"
-MakiecDFTExt = "Makie"
-MetalcDFTExt = "Metal"
-PlotscDFTExt = "Plots"
-SciMLBasecDFTExt = "SciMLBase"
-ThreadPinningcDFTExt = "ThreadPinning"
+LaTeXStringsClassicalDFTExt = "LaTeXStrings"
+MakieClassicalDFTExt = "Makie"
+MetalClassicalDFTExt = "Metal"
+PlotsClassicalDFTExt = "Plots"
+SciMLBaseClassicalDFTExt = "SciMLBase"
+ThreadPinningClassicalDFTExt = "ThreadPinning"
 
 [compat]
 AbstractFFTs = "1.5.0"
