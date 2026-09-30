@@ -76,14 +76,25 @@ _energy_scale(system::DFTSystem{<:Clapeyron.SAFTgammaMieModel}) = length_scale(s
 _energy_scale(system::DFTSystem{<:Clapeyron.COFFEEModel})       = length_scale(system.model)^3
 _energy_scale(system::DFTSystem{<:Clapeyron.PeTSModel})         = length_scale(system.model)^3
 _energy_scale(system::DGTSystem)                                = length_scale(system.model)^3
+_energy_scale(system::ElectrolyteDFTSystem)                     = length_scale(system.model)^3
 
 """
     F_res(system::DFTSystem, ρ)
 
 Residual free energy for DFT systems via the Enzyme/KA kernel path.
 Runs the same δf_rev_kernel!/δf_fwd_kernel! used by δFδρ_res! and integrates the primal f_val.
+
+`ElectrolyteDFTSystem` uses this same fast path (not the old scalar
+fallback below): its own `f_res(::Type{M},...) where M<:ElectrolyteModel`
+(`models/DFT/Electrolyte/base.jl`) already dispatches through the modern
+kernel convention, and `preallocate`/`preallocate_model`/`preallocate_params`
+already have `ElectrolyteDFTSystem`-specific methods -- this was previously
+excluded from the Union here only by omission, which silently fell through
+to the old-path fallback's `_energy_scale(system)=1.0` default (no `L^3`
+division at all) for every electrolyte model's own `surface_tension`/
+`free_energy`, not merely for any DFT-side extension added later.
 """
-function F_res(system::Union{DFTSystem, DGTSystem}, ρ)
+function F_res(system::Union{DFTSystem, DGTSystem, ElectrolyteDFTSystem}, ρ)
     δfδρ_res, cache_model, _, _ = preallocate(system, ρ)
     δFδρ_res!(system, ρ, δfδρ_res, cache_model...)
     f_val = cache_model[9]

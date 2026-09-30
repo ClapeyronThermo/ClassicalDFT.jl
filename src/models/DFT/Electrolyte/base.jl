@@ -2,6 +2,7 @@ import Clapeyron: ElectrolyteModel
 
 include("electrostatic_potential.jl")
 include("DH.jl")
+include("LS.jl")
 
 
 function ElectrolyteDFTSystem(model::ElectrolyteModel, structure::DFTStructure, external_field::ExternalFieldModel, options::DFTOptions = DFTOptions())
@@ -16,7 +17,13 @@ function ElectrolyteDFTSystem(model::ElectrolyteModel, structure::DFTStructure, 
     species.chempot_res .= μres
 
     fields = get_fields(model.neutralmodel, species, structure, options.device, FP)
-    fields_ion = get_fields((model.ionmodel,FP(length_scale(model))), ion_species, structure, options.device, FP)
+    # NOT FP(...): see LS.jl/DH.jl's own `get_fields(::LSIon/DHModel,...)` wrapper
+    # methods' matching note -- `length_scale(model)` is threaded through to
+    # `SWeightedDensity` in place of a model object (via `length_scale(::Real)`'s
+    # identity fallback), which expects `Float64` regardless of working
+    # precision `FP` (confirmed directly: `Float32` raises a `MethodError`
+    # under a CUDA/Float32 `DFTOptions`).
+    fields_ion = get_fields((model.ionmodel,length_scale(model)), ion_species, structure, options.device, FP)
 
     typed_fields = tuple(fields..., fields_ion...)
 
@@ -42,7 +49,8 @@ function ElectrolyteDFTSystem(model::ElectrolyteModel, structure::DFTStructure, 
     species.chempot_res .= μres
 
     fields = get_fields(model.neutralmodel, species, structure, device, FP)
-    fields_ion = get_fields((model.ionmodel,FP(length_scale(model))), ion_species, structure, device, FP)
+    # NOT FP(...): see the other `ElectrolyteDFTSystem` constructor above.
+    fields_ion = get_fields((model.ionmodel,length_scale(model)), ion_species, structure, device, FP)
     
     typed_fields = tuple(fields..., fields_ion...)
 
