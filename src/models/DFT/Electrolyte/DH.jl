@@ -62,14 +62,27 @@ end
 
 """
     get_fields(ionmodel::DHModel, species, structure, device, FP)
-    get_fields(ionmodel_and_L::Tuple{<:DHModel,FP} species, structure, device, FP)
+    get_fields(ionmodel_and_L::Tuple{<:DHModel,Real} species, structure, device, FP)
 
-Builds the ion field in reduced units, mirroring PCSAFT.jl's scheme, so it stays numerically consistent with the neutral model's own (already reduced-units) fields when both are combined into one `ElectrolyteDFTSystem`. 
-`L` defaults to `length_scale(ionmodel)` for standalone use, but `ElectrolyteDFTSystem`'s constructor explicitly passes `length_scale(model)` (== `length_scale(model.neutralmodel)`) instead — the neutral and ion contributions MUST share the same `L`, since only one global `_energy_scale`/`L^3` correction is applied to their combined `F_res`. 
-See PCSAFT.jl's `get_fields` docstring for the overall reduced-units scheme, and `f_dh`'s docstring below for how the compensating `N_A*L^3` factor is threaded through this model's own free-energy kernel (which — unlike the SAFT-family models — reads `n[]` directly rather than via an `HSd^3`-normalized ratio, so it needs its own explicit compensation rather than an automatic cancellation). 
+Builds the ion field in reduced units, mirroring PCSAFT.jl's scheme, so it stays numerically consistent with the neutral model's own (already reduced-units) fields when both are combined into one `ElectrolyteDFTSystem`.
+`L` defaults to `length_scale(ionmodel)` for standalone use, but `ElectrolyteDFTSystem`'s constructor explicitly passes `length_scale(model)` (== `length_scale(model.neutralmodel)`) instead — the neutral and ion contributions MUST share the same `L`, since only one global `_energy_scale`/`L^3` correction is applied to their combined `F_res`.
+See PCSAFT.jl's `get_fields` docstring for the overall reduced-units scheme, and `f_dh`'s docstring below for how the compensating `N_A*L^3` factor is threaded through this model's own free-energy kernel (which — unlike the SAFT-family models — reads `n[]` directly rather than via an `HSd^3`-normalized ratio, so it needs its own explicit compensation rather than an automatic cancellation).
 The resolved `L` (a plain `Float64`, not `ionmodel` itself) is passed along the DH model to maintain the length scale consistency between the neutral model and the DH model.
+
+`L`'s own type is intentionally NOT tied to the working precision `FP` (the
+tuple is `Tuple{<:DHModel,<:Real}`, not `Tuple{<:DHModel,FP}`): `L` is
+threaded through to `SWeightedDensity` in place of a model object (via
+`length_scale(::Real)`'s identity fallback), which stores it in a
+`density_scale::Float64` field regardless of `FP` -- exactly like every
+OTHER model's own `SWeightedDensity` call, whose `length_scale(model)` is
+always `Float64` internally regardless of `FP` too. Binding `L`'s type to
+`FP` here (the original, buggy signature) forced an `FP`-cast at every call
+site and broke under `FP=Float32` (confirmed directly via a CUDA/Float32
+`DFTOptions`, chasing the identical bug in the LS.jl analogue of this
+pattern: `MethodError` building `SWeightedDensity`, no method for `Float64`
+given a `Float32`).
 """
-function get_fields(tup::Tuple{<:DHModel,FP}, species::DFTSpecies, structure::DFTStructure, device::Backend, ::Type{FP}) where FP<:AbstractFloat
+function get_fields(tup::Tuple{<:DHModel,<:Real}, species::DFTSpecies, structure::DFTStructure, device::Backend, ::Type{FP}) where FP<:AbstractFloat
     ionmodel,L = tup
     (pressure, temperature) = structure.conditions
     ρbulk = structure.ρbulk
@@ -87,7 +100,17 @@ function get_fields(tup::Tuple{<:DHModel,FP}, species::DFTSpecies, structure::DF
 end
 
 function get_fields(ionmodel::DHModel, species::DFTSpecies, structure::DFTStructure, device::Backend, ::Type{FP}) where FP <: AbstractFloat
-    L = FP(length_scale(ionmodel))
+    # NOT FP(...): pre-existing bug, found while getting LS running under a
+    # CUDA/Float32 `DFTOptions` -- `L` is threaded through to
+    # `SWeightedDensity` in place of a model object (via `length_scale(::Real)`'s
+    # identity fallback, `src/models/models.jl`), which that struct's
+    # `density_scale::Float64` field expects as `Float64` regardless of the
+    # working precision `FP`. An `FP`-cast `L` (e.g. `Float32`) raises a
+    # `MethodError` building `SWeightedDensity` -- confirmed directly for the
+    # LS.jl analogue of this exact pattern, same root cause. `L` is a
+    # one-time physical setup-time scalar, not a per-gridpoint array, so
+    # there is no precision reason to narrow it in the first place.
+    L = length_scale(ionmodel)
     return get_fields((ionmodel,L), species, structure, device, FP)
 end
 

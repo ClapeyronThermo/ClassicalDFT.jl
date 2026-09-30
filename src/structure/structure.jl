@@ -49,49 +49,25 @@ julia> profiles_perturbed = initialize_profiles(system; noise=0.01)  # for DDFT
 """
 function initialize_profiles(system::AbstractcDFTSystem; noise::Real=0.0)
     ρ = initialize_profiles(system.model,system.structure,system.species,system.options.device,fptype(system.options))
-    if system.external_field == nothing
-        # pass
-    else
+    if system.external_field != nothing
         for i in system.external_field
             if !(i isa ElectrostaticPotentialModel)
                  initialize_profiles!(system, i, ρ)
             end
         end
-
-        if any(typeof.(system.external_field) .<: ElectrostaticPotentialModel)
-            ep_idx = findfirst(typeof.(system.external_field) .<: ElectrostaticPotentialModel)
-            ef = system.external_field[ep_idx]
-
-            # A two-phase electrolyte system whose two bulk phases sit at
-            # different electrochemical (Donnan) potentials needs a LOCAL
-            # charge-layer correction seeding that structure -- the naive
-            # per-component tanh IC built above has identically zero local
-            # charge everywhere by construction (see
-            # `impose_donnan_structure!`'s docstring), which is the wrong
-            # topology to relax from. This is independent of, and applied
-            # before, the domain-INTEGRATED electroneutrality correction
-            # just below (a single global constant zeroing the box's TOTAL
-            # charge, not the local structure a genuine potential jump
-            # requires); the two don't conflict since this correction is
-            # itself already domain-charge-neutral by construction (the
-            # periodic tanh derivative it's built from integrates to zero
-            # over one period).
-            if system.model isa ElectrolyteModel && system.structure isa DFTStructure{1,Cartesian,TwoPhaseSystem{:Cartesian}}
-                impose_donnan_structure!(system.structure, ef, system.model, ρ)
-            end
-
-            ψ = find_ψ_const(system.structure, ef, system.model, ρ) ./ k_B / system.structure.conditions[2]
-            # system.model.charge is a plain Vector{Int64} on Clapeyron's ElectrolyteModel
-            # struct, never adapted to the system's device — broadcasting it directly
-            # against ψ (GPU-resident, since it's built from ρ) fails GPU compilation
-            # ("passing non-bitstype argument": a CPU Vector reachable from the broadcast
-            # tree). adapt_to_device moves it to the same backend/FP as ρ, matching the
-            # convention used for every other model-derived array throughout this codebase.
-            Z = adapt_to_device(system.options.device, fptype(system.options), system.model.charge)
-            ρ .*= exp.(-ψ*Z')
-        end
     end
 
+    # Independent per-gridpoint/per-species multiplicative noise (below) is
+    # NOT charge-preserving -- unlike the base profile, which is exactly
+    # domain-neutral by construction, applying it breaks that exactly
+    # (confirmed directly: a net-neutral single-component LS chain, whose
+    # noiseless IC has Σ Zₖ∫ρₖ=0 to machine precision, picked up a nonzero
+    # net domain charge after noise, since different beads of the same
+    # component -- opposite charge signs, same base density -- receive
+    # independent random factors). Noise therefore runs BEFORE the
+    # electrostatic corrections below, not after, so whatever electroneutral
+    # state they produce is the one actually handed off, not further
+    # perturbed afterward.
     if !iszero(noise)
         nd = dimension(system)
         FP = fptype(system.options)
@@ -99,6 +75,48 @@ function initialize_profiles(system::AbstractcDFTSystem; noise::Real=0.0)
         ξ = adapt_to_device(system.options.device, FP, rand(FP, size(ρ)...))
         ρ .*= 1 .+ FP(noise) .* (2 .* ξ .- 1)
         ρ .*= ρ_total ./ sum(ρ, dims=nd+1)
+    end
+
+    if system.external_field != nothing && any(typeof.(system.external_field) .<: ElectrostaticPotentialModel)
+        ep_idx = findfirst(typeof.(system.external_field) .<: ElectrostaticPotentialModel)
+        ef = system.external_field[ep_idx]
+
+        # A two-phase electrolyte system whose two bulk phases sit at
+        # different electrochemical (Donnan) potentials needs a LOCAL
+        # charge-layer correction seeding that structure -- the naive
+        # per-component tanh IC built above has identically zero local
+        # charge everywhere by construction (see
+        # `impose_donnan_structure!`'s docstring), which is the wrong
+        # topology to relax from. This is independent of, and applied
+        # before, the domain-INTEGRATED electroneutrality correction
+        # just below (a single global constant zeroing the box's TOTAL
+        # charge, not the local structure a genuine potential jump
+        # requires); the two don't conflict since this correction is
+        # itself already domain-charge-neutral by construction (the
+        # periodic tanh derivative it's built from integrates to zero
+        # over one period).
+        if system.model isa ElectrolyteModel && system.structure isa DFTStructure{1,Cartesian,TwoPhaseSystem{:Cartesian}}
+            impose_donnan_structure!(system.structure, ef, system.model, ρ)
+        end
+
+        ψ = find_ψ_const(system.structure, ef, system.model, ρ) ./ k_B / system.structure.conditions[2]
+        # system.model.charge is a plain Vector{Int64} on Clapeyron's ElectrolyteModel
+        # struct, never adapted to the system's device — broadcasting it directly
+        # against ψ (GPU-resident, since it's built from ρ) fails GPU compilation
+        # ("passing non-bitstype argument": a CPU Vector reachable from the broadcast
+        # tree). adapt_to_device moves it to the same backend/FP as ρ, matching the
+        # convention used for every other model-derived array throughout this codebase.
+        Z = adapt_to_device(system.options.device, fptype(system.options), system.model.charge)
+        # `Z'` (a `1×nbeads` row) only broadcasts correctly against `ρ`'s trailing bead
+        # dimension when `ρ` itself is exactly 2D (`ngrid × nbeads`, i.e. a 1D spatial
+        # structure) -- for nd>1, `ρ` is `(ngrid...,nbeads)` and `Z'` would instead try
+        # to align against `ρ`'s SECOND spatial dimension, a size mismatch (confirmed
+        # directly: a 2D Uniform2DCart ElectrolyteDFTSystem raised a DimensionMismatch
+        # here). Reshaping to `nd` leading singleton dims makes this broadcast correctly
+        # against the trailing bead dimension regardless of spatial dimensionality.
+        nd_ep = dimension(system.structure)
+        Zr = reshape(Z, ntuple(_ -> 1, nd_ep)..., length(Z))
+        ρ .*= exp.(-ψ .* Zr)
     end
 
     # Bounds derived from the working type's own representable range (not a fixed

@@ -203,7 +203,7 @@ function get_species(model::LSIon, neutralmodel::LSNeutral, charges::Vector{Int}
 end
 
 """
-    get_fields(tup::Tuple{<:LSIon,FP}, species, structure, device, FP)
+    get_fields(tup::Tuple{<:LSIon,Real}, species, structure, device, FP)
 
 One extra `∫ρdz` field (on top of `LSDFTNeutral`'s 5), smoothed over a
 `(σ/2 + 1/κ_MSA_bulk)` width -- exactly `DH.jl`'s `get_fields` pattern, with
@@ -211,8 +211,20 @@ One extra `∫ρdz` field (on top of `LSDFTNeutral`'s 5), smoothed over a
 must be the *neutral* model's `length_scale` (shared with `LSDFTNeutral`'s
 fields) since only one global `_energy_scale`/`L^3` correction applies to
 the combined `F_res` -- see `DH.jl`'s own matching note.
+
+`L`'s own type is intentionally NOT tied to the working precision `FP` (the
+tuple is `Tuple{<:LSIon,<:Real}`, not `Tuple{<:LSIon,FP}`): `L` is threaded
+through to `SWeightedDensity` in place of a model object (via
+`length_scale(::Real)`'s identity fallback), which stores it in a
+`density_scale::Float64` field regardless of `FP` -- exactly like every
+OTHER model's own `SWeightedDensity` call, whose `length_scale(model)` is
+always `Float64` internally regardless of `FP` too. Binding `L`'s type to
+`FP` here (the original, buggy signature) forced an `FP`-cast at every call
+site and broke under `FP=Float32` (confirmed directly via a CUDA/Float32
+`DFTOptions`: `MethodError` building `SWeightedDensity`, no method for
+`Float64` given a `Float32`).
 """
-function get_fields(tup::Tuple{<:LSIon,FP}, species::DFTSpecies, structure::DFTStructure, device::Backend, ::Type{FP}) where FP<:AbstractFloat
+function get_fields(tup::Tuple{<:LSIon,<:Real}, species::DFTSpecies, structure::DFTStructure, device::Backend, ::Type{FP}) where FP<:AbstractFloat
     ionmodel, L = tup
     (pressure, temperature) = structure.conditions
     ρbulk = structure.ρbulk
@@ -235,7 +247,16 @@ function get_fields(tup::Tuple{<:LSIon,FP}, species::DFTSpecies, structure::DFTS
 end
 
 function get_fields(model::LSIon, species::DFTSpecies, structure::DFTStructure, device::Backend, ::Type{FP}) where FP<:AbstractFloat
-    L = FP(length_scale(model))
+    # NOT FP(...): `L` is threaded through to `SWeightedDensity` in place of
+    # a model object (via `length_scale(::Real)`'s identity fallback,
+    # `src/models/models.jl`), which that struct's `density_scale::Float64`
+    # field expects as `Float64` regardless of the working precision `FP` --
+    # confirmed directly: an `FP`-cast `L` (e.g. `Float32` under a CUDA/
+    # Float32 `DFTOptions`) raised a `MethodError` building `SWeightedDensity`
+    # (no method for `density_scale::Float64` given a `Float32`). `L` is a
+    # one-time physical setup-time scalar, not a per-gridpoint array, so
+    # there is no precision reason to narrow it in the first place.
+    L = length_scale(model)
     return get_fields((model, L), species, structure, device, FP)
 end
 

@@ -107,7 +107,14 @@ function evaluate_external_field!(structure::DFTStructure,external_field::Electr
     convolve!(Vext, Vext, map, P, iP, Vext)
 
     center_idx = CartesianIndex(ntuple(d -> (ngrid[d] + 1) ÷ 2, nd))
-    Vext .-= Vext[center_idx]
+    # `Vext[center_idx]` (a single-element scalar `getindex`) is disallowed
+    # on a GPU array -- confirmed directly under a CUDA `DFTOptions`
+    # ("Scalar indexing is disallowed"). `center_idx:center_idx` builds a
+    # 1-element `CartesianIndices` RANGE instead of a lone `CartesianIndex`,
+    # so `Vext[center_idx:center_idx]` is an ordinary (GPU-safe) array-slicing
+    # `getindex`; `Array(...)` then copies just that one element to host.
+    center_val = Array(Vext[center_idx:center_idx])[1]
+    Vext .-= center_val
 
     for i in 1:nbeads
         selectdim(δfδρ_res,nd+1,i) .+= Z[i]*Vext / k_B / temperature
