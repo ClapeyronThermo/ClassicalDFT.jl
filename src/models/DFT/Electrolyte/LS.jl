@@ -105,7 +105,7 @@ end
     FP = eltype(n)
     idx_ζ = 4 + ND
     ζ₃ = zero(FP); ζ₂ = zero(FP)
-    @inbounds for i in 1:NC
+    @inbounds @unroll for i in 1:NC
         mi = m_seg[i]; di = HSd[i]; ρ̄hci = n[kk, idx_ζ, i]
         ζ₃ += mi * ρ̄hci
         ζ₂ += mi * ρ̄hci / di
@@ -329,12 +329,15 @@ function preallocate_params(system::ElectrolyteDFTSystem, model::LSIon)
     NF_neutral = compute_field_len(Base.front(system.fields), nd)
     temperature = system.structure.conditions[2]
     ρbulk_ion = system.ion_species.bulk_density
-    eps_r = FP(dielectric_constant(model.RSPmodel, 1 / sum(ρbulk_ion), temperature, ρbulk_ion))
+    eps_r = dielectric_constant(model.RSPmodel, 1 / sum(ρbulk_ion), temperature, ρbulk_ion)
+    # lB·T = e²/(4πϵ₀ϵᵣσk_B), folded in Float64 here: evaluated factor-by-factor in
+    # Float32 inside the kernel, the denominator (~1e-40) is subnormal and GPUs flush it to 0.
+    lBT = FP(e_c^2 / (4π * ϵ_0 * eps_r * LS_SIGMA * k_B))
     L = length_scale(system.model)
     width_vec = last(system.fields).width
 
     base = _ls_ion_params(model, FP, width_vec, L, NF_neutral)
-    return merge((; ls_eps_r = eps_r), base)
+    return merge((; ls_lBT = lBT), base)
 end
 
 """
@@ -352,12 +355,15 @@ function preallocate_params(system::DFTSystem{<:LSIon})
     FP = fptype(system.options)
     temperature = system.structure.conditions[2]
     ρbulk_ion = system.species.bulk_density
-    eps_r = FP(dielectric_constant(model.RSPmodel, 1 / sum(ρbulk_ion), temperature, ρbulk_ion))
+    eps_r = dielectric_constant(model.RSPmodel, 1 / sum(ρbulk_ion), temperature, ρbulk_ion)
+    # lB·T = e²/(4πϵ₀ϵᵣσk_B), folded in Float64 here: evaluated factor-by-factor in
+    # Float32 inside the kernel, the denominator (~1e-40) is subnormal and GPUs flush it to 0.
+    lBT = FP(e_c^2 / (4π * ϵ_0 * eps_r * LS_SIGMA * k_B))
     L = length_scale(model)
     width_vec = system.fields[1].width
 
     base = _ls_ion_params(model, FP, width_vec, L, 0)
-    params = merge((; ls_eps_r = eps_r), base)
+    params = merge((; ls_lBT = lBT), base)
     return params, length(model.params.Z.values)
 end
 
@@ -382,12 +388,10 @@ conversion needed, matching the neutral model's convention.
 @inline function f_el_and_bond_ion(::Type{M}, kk, n, params, T, ::Val{NC}, ::Val{NF_NEUTRAL}) where {M, NC, NF_NEUTRAL}
     FP = eltype(n)
     F_ion = NF_NEUTRAL + 1
-    ε_r = params.ls_eps_r
-    _ec = FP(e_c); _kB = FP(k_B); _ϵ0 = FP(ϵ_0)
-    lB = _ec * _ec / (4 * FP(π) * _ϵ0 * ε_r * LS_SIGMA * _kB * T)
+    lB = params.ls_lBT / T
 
     I = zero(FP)
-    @inbounds for i in 1:NC
+    @inbounds @unroll for i in 1:NC
         Zi = _nti(params.ls_Z, i)
         wi = _nti(params.ls_width, i)
         ρi = n[kk, F_ion, i] / (wi * 2)
@@ -406,7 +410,7 @@ end
 @inline function f_bond_ion(n, bond_k::NTuple{NB, Int}, bond_sign::NTuple{NB}, kk, Δ) where NB
     FP = typeof(Δ)
     res = zero(FP)
-    @inbounds for ib in 1:NB
+    @inbounds @unroll for ib in 1:NB
         k = _nti(bond_k, ib)
         s = _nti(bond_sign, ib)
         ρk = n[kk, 1, k]

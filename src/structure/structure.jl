@@ -99,7 +99,9 @@ function initialize_profiles(system::AbstractcDFTSystem; noise::Real=0.0)
             impose_donnan_structure!(system.structure, ef, system.model, ρ)
         end
 
-        ψ = find_ψ_const(system.structure, ef, system.model, ρ) ./ k_B / system.structure.conditions[2]
+        # Cast to the working precision: `find_ψ_const` returns a Float64 scalar, and a
+        # Float64 captured in the broadcast below fails to compile on Metal (no Float64).
+        ψ = fptype(system.options)(find_ψ_const(system.structure, ef, system.model, ρ) / k_B / system.structure.conditions[2])
         # system.model.charge is a plain Vector{Int64} on Clapeyron's ElectrolyteModel
         # struct, never adapted to the system's device — broadcasting it directly
         # against ψ (GPU-resident, since it's built from ρ) fails GPU compilation

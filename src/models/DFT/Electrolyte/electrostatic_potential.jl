@@ -116,8 +116,12 @@ function evaluate_external_field!(structure::DFTStructure,external_field::Electr
     center_val = Array(Vext[center_idx:center_idx])[1]
     Vext .-= center_val
 
+    # Fold the scalar prefactor in Float64 and cast once to the working precision: a
+    # Float64 scalar broadcast against a Float32 GPU array would promote it to Float64,
+    # which Metal doesn't support.
+    FP = eltype(δfδρ_res)
     for i in 1:nbeads
-        selectdim(δfδρ_res,nd+1,i) .+= Z[i]*Vext / k_B / temperature
+        selectdim(δfδρ_res,nd+1,i) .+= FP(Z[i] / k_B / temperature) .* Vext
     end
 end
 

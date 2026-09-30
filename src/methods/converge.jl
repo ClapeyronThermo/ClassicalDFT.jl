@@ -132,9 +132,11 @@ chooses to compute the residual from.
 function impose_electroneutrality!(structure::DFTStructure, external_field::ElectrostaticPotentialModel, model::ElectrolyteModel, ρ)
     Z = model.charge
     nd = length(structure.ngrid)
+    # Cast to ρ's precision: a Float64 scalar in a GPU broadcast fails to compile on Metal.
+    FP = eltype(ρ)
     ψ = find_ψ_const(structure, external_field, model, ρ) / k_B / structure.conditions[2]
     for k in eachindex(Z)
-        selectdim(ρ, nd + 1, k) .*= exp(-ψ * Z[k])
+        selectdim(ρ, nd + 1, k) .*= FP(exp(-ψ * Z[k]))
     end
     return ρ
 end
@@ -192,7 +194,7 @@ function get_new_profile!(system::Union{DFTSystem,DGTSystem,ElectrolyteDFTSystem
         psi_c = find_ψ_const(system.structure, ep_model, model, exp.(ln_Gx))/k_B/system.structure.conditions[2]
         for i in @comps
             for k in @chain(i)
-                selectdim(ln_Gx,nd+1,k) .-= psi_c*Z[k]
+                selectdim(ln_Gx,nd+1,k) .-= FP(psi_c*Z[k])
             end
         end
     end
