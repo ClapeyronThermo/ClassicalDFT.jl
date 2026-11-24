@@ -216,15 +216,13 @@ function SCFTSequenceFluid(descriptor::SequenceDescriptor, b; rho0::Real, kappa:
                          [bondmat], [collect(1:Nc)], names, [ones(Int, Nc)], String[])
 
     chi, b_vec = sequence_chi_b(descriptor, b; rho0=rho0, gamma=gamma)
-    params = SCFTLatticeFluidParam(SingleParam("b", names, b_vec),
-                                    PairParam("chi", names, chi))
-    ideal = init_model(idealmodel, [component], String[], false)
-    return SCFTLatticeFluid([component], groups, params, Float64(rho0), Float64(kappa),
-                             ideal, references)
+    return SCFTModel(groups; rho0, idealmodel, references,
+        chain = SCFTChainModel[GaussianChain(b = bk) for bk in b_vec],
+        interactions = (HelfandCompressibility(kappa), FloryHuggins(chi)))
 end
 
 """
-    SCFTSequenceSystem(model::SCFTLatticeFluid, structure::DFTStructure, options=DFTOptions();
+    SCFTSequenceSystem(model::SCFTModel, structure::DFTStructure, options=DFTOptions();
                         ensemble=:grand_canonical, n_molecules=0.0, external_field=nothing)
 
 Construct an [`SCFTSystem`](@ref) for a sequence-SCFT `model` built by
@@ -237,7 +235,7 @@ construction, so [`get_species`](@ref)/`get_propagator` are called on it directl
 `ensemble`/`n_molecules` are scalar (not `Vector`s, unlike `SCFTSystem`) since v1 supports
 exactly one sequence-chain molecule type.
 """
-function SCFTSequenceSystem(model::SCFTLatticeFluid, structure::DFTStructure,
+function SCFTSequenceSystem(model::SCFTModel, structure::DFTStructure,
                              options::DFTOptions = DFTOptions();
                              ensemble::Symbol = :grand_canonical,
                              n_molecules::Real = 0.0,

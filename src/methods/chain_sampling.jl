@@ -121,9 +121,8 @@ this once yourself and pass its `(q_in, q_out)` into each subsequent call rather
 letting every call recompute its own.
 """
 function compute_propagator_fields(system::SCFTSystem, ρ)
-    if hasproperty(system.model.params, :nu)
-        nu = system.model.params.nu.values
-        any(!=(zero(eltype(nu))), nu) && throw(ArgumentError(
+    if has_maier_saupe(system.model)
+        throw(ArgumentError(
             "compute_propagator_fields does not support nu != 0 (Maier-Saupe) models -- " *
             "the converged q_in/q_out there depend on the R_tensor state converge! tracks " *
             "across iterations, which isn't recoverable from ρ alone."))
@@ -288,8 +287,8 @@ function sample_chain(system::SCFTWLCSystem, ρ, anchor_bead::Int, r0, u0;
     species = system.species.sequence[chain]
     N = length(species)
     (1 <= anchor_bead <= N) || throw(ArgumentError("anchor_bead=$anchor_bead out of range 1:$N"))
-    b_species = system.model.params.b.values
-    lp_species = system.model.params.lp.values
+    b_species = segment_lengths(system.model)
+    lp_species = persistence_lengths(system.model)
     L_max = system.propagator.sht.L_max
     u_nodes = system.propagator.sht.u_nodes
     quad_w = system.propagator.sht.quad_weight

@@ -9,6 +9,7 @@ using ChemicalIdentifiers
     include("test_models.jl")
     include("test_dgt.jl")
     include("test_scft.jl")
+    include("test_scft_regression.jl")
     include("test_wlc.jl")
     include("test_wlc_gpu.jl")
     include("test_methods.jl")

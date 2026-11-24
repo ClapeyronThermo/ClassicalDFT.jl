@@ -690,7 +690,7 @@ function ClassicalDFT.plot_chain_conformations(system::ClassicalDFT.SCFTWLCSyste
     diff_tiled = repeat(diff, nxt, nyt)
 
     seq = system.species.sequence[chain]
-    lp_species = system.model.params.lp.values
+    lp_species = ClassicalDFT.persistence_lengths(system.model)
     species_present = unique(seq)
     colors = Dict(s => species_colors[mod1(i, length(species_colors))] for (i, s) in enumerate(species_present))
 

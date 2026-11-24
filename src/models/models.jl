@@ -348,7 +348,7 @@ end
 (reused verbatim via `_preallocate_model_scft_common`, avoiding self-recursion): same
 buffers, plus the Maier-Saupe orientation-moment tensor state `R_tensor`/`R_tensor_new`
 (shape `(ngrid...,nspecies,6)`, `compute_orientation_moments`, `src/models/SCFT/scft.jl`)
-and a precomputed `maier_saupe_active` flag (`true` iff `system.model.params.nu` has
+and a precomputed `maier_saupe_active` flag (`true` iff the model's `MaierSaupe` `nu` has
 any nonzero entry) so `converge!`/`get_new_profile!` can skip all Maier-Saupe work
 (field construction, extra `free_energy` terms) when `nu` is entirely zero, exactly
 reproducing pre-Maier-Saupe behavior at zero extra propagator cost.
@@ -358,11 +358,10 @@ function preallocate_model(system::SCFTWLCSystem, ρ; quadrature::Symbol=:trapz)
     nspecies = length(system.model.groups.flattenedgroups)
     ngrid = system.structure.ngrid
     FT = eltype(ρ)
-    nu = system.model.params.nu.values
-    maier_saupe_active = any(!=(zero(eltype(nu))), nu)
+    ms_active = has_maier_saupe(system.model)
     R_tensor     = zeros(FT, ngrid..., nspecies, 6)
     R_tensor_new = zeros(FT, ngrid..., nspecies, 6)
-    return (; base..., R_tensor, R_tensor_new, maier_saupe_active)
+    return (; base..., R_tensor, R_tensor_new, maier_saupe_active = ms_active)
 end
 
 function length_scales(model::EoSModel)

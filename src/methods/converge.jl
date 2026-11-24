@@ -479,7 +479,7 @@ end
     converge!(prob::SCFTProblem{<:SCFTWLCSystem}, method::AASol, ρ::AbstractArray)
 
 `WLCPropagator`-specific extension of `converge!(prob::SCFTProblem{S}, ...) where S`
-(above): when `system.model.params.nu` is entirely zero, falls back via `invoke` to
+(above): when the model has no active `MaierSaupe` interaction (`nu` entirely zero), falls back via `invoke` to
 *exactly* the generic method (not merely equivalent code — the same method, byte-for-
 byte, guaranteeing zero behavioral change at `nu=0`).
 
@@ -506,8 +506,7 @@ session for `SCFTWLCSystem` itself, see its docstring in `src/models/SCFT/scft.j
 """
 function converge!(prob::SCFTProblem{<:SCFTWLCSystem}, method::AASol, ρ::AbstractArray)
     system = prob.system
-    nu = system.model.params.nu.values
-    if !any(!=(zero(eltype(nu))), nu)
+    if !has_maier_saupe(system.model)
         return invoke(converge!, Tuple{SCFTProblem,AASol,AbstractArray}, prob, method, ρ)
     end
 

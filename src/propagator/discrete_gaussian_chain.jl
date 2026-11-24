@@ -7,7 +7,7 @@ the generic `(model, species, structure, device, FP)` constructor signature ever
 `DFTPropagator` uses (e.g. `TangentHSPropagator`).
 
 # Arguments
-- `model::EoSModel`: Supplies `b_species = model.params.b.values`, the statistical segment
+- `model::EoSModel`: Supplies `b_species = segment_lengths(model)`, the statistical segment
   length for each species type.
 - `species::DFTSpecies`: Supplies `species.sequence`, the node-to-species mapping per
   chain (also gives `N = length.(species.sequence)`), and `species.i_groups`/
@@ -29,7 +29,7 @@ function DiscreteGaussianChainPropagator(
     device::Backend,
     ::Type{FP}=Float64
 ) where FP<:AbstractFloat
-    b_species = model.params.b.values
+    b_species = segment_lengths(model)
     segment_species = species.sequence
     N = length.(segment_species)
     nchains = length(N)

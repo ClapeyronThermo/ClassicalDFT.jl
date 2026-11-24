@@ -22,7 +22,7 @@ end
 Construct a `WLCPropagator`, matching the generic `(model, species, structure, device,
 FP)` constructor signature every `DFTPropagator` uses.
 
-`model.params.b`/`model.params.lp` give per-species bond length / persistence length;
+`segment_lengths(model)`/`persistence_lengths(model)` give per-species bond length / persistence length;
 `κ_α = lp_α/b_α`. For a junction bond `(α,β)`, `b_bond = sqrt((b_α²+b_β²)/2)` (matching
 `DiscreteGaussianChainPropagator`'s convention) and `κ_bond = sqrt((κ_α²+κ_β²)/2)`,
 except when exactly one side is the exact rigid-rod limit (`κ=Inf`, i.e. `lp=Inf`): then
@@ -97,8 +97,8 @@ function WLCPropagator(
         reshape(FP.(vec), ntuple(d -> d == i ? rfft_ngrid[d] : 1, nd))
     end
 
-    b_species = model.params.b.values
-    lp_species = model.params.lp.values
+    b_species = segment_lengths(model)
+    lp_species = persistence_lengths(model)
 
     bond_pairs = Set{Tuple{Int,Int}}()
     for c in 1:nchains

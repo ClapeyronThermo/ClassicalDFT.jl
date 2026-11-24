@@ -266,14 +266,14 @@ struct SCFTSystem{M<:EoSModel, S<:DFTSpecies, T<:DFTStructure, P<:DFTPropagator,
 end
 
 """
-    SCFTSystem(model::SCFTLatticeFluid, structure::DFTStructure, options::DFTOptions=DFTOptions();
+    SCFTSystem(model::SCFTModel, structure::DFTStructure, options::DFTOptions=DFTOptions();
                mol_structure, ensemble=fill(:grand_canonical,ncomponents), n_molecules=zeros(ncomponents))
 
 Construct a Self-consistent field theory (SCFT) system.
 
 ## Arguments:
 
-- `model`: An `EoSModel` for the bulk interaction (e.g., `SCFTLatticeFluid`), built from a Clapeyron group-contribution `grouplist` — `model.components` are molecule types  (chains/solvents), `model.groups.flattenedgroups` are species.
+- `model`: An [`SCFTModel`](@ref) (or a legacy constructor such as `SCFTLatticeFluid`), built from a Clapeyron group-contribution `grouplist` — `model.components` are molecule types  (chains/solvents), `model.groups.flattenedgroups` are species.
 - `structure`: Spatial discretization, e.g. `Uniform1DCart((0.,0.), ρbulk, [0.,L], ngrid)`.
 - `options`: `DFTOptions` for device/solver settings.
 

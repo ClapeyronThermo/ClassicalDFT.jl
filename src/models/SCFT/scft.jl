@@ -1,71 +1,28 @@
-include("eos.jl")
+include("model.jl")
+include("legacy.jl")
 
 """
-    compute_fields!(system::SCFTSystem, ρ, w)
+    compute_fields!(system::SCFTSystem, ρ, w; scratch=nothing)
 
-Compute the mean-field potential fields `w` from the density profiles `ρ`, for local Flory-Huggins interactions with Helfand compressibility:
+Compute the scalar mean fields `w` from the density profiles `ρ` as the sum of every
+interaction's field (`add_field!`, see [`SCFTInteractionModel`](@ref)), e.g. for
+`(FloryHuggins(χ), HelfandCompressibility(κ))`:
 ```
- w_α(r) = Σ_β (χ_αβ / ρ₀) ρ_β(r) + (ζ / ρ₀)(ρ₊(r) / ρ₀ - 1)
+ w_α(r) = Σ_β (χ_αβ / ρ₀) ρ_β(r) + (κ / ρ₀)(ρ₊(r) / ρ₀ - 1)
 ```
-where `ρ₊ = Σ_α ρ_α` is the total density, and `χ`/`ρ₀`/`ζ` come from `system.model` (an [`SCFTLatticeFluid`](@ref)).
+where `ρ₊ = Σ_α ρ_α`. Orientation-dependent fields (Maier-Saupe) are not part of `w`.
+`scratch`, when given, is a preallocated single-species-shaped buffer for `ρ₊`.
 """
 function compute_fields!(system::SCFTSystem, ρ, w; scratch=nothing)
+    model = system.model
     nd = dimension(system)
-    nspecies = length(system.model.groups.flattenedgroups)
-    FT = eltype(w)
-    chi = FT.(system.model.params.chi.values)
-    rho0 = FT(system.model.rho0)
-    kappa = FT(system.model.kappa)
-
-    # Use preallocated scratch if provided, otherwise allocate.
-    # scratch must have the same shape/device as a single species slice of w.
     ρ_total = scratch !== nothing ? scratch : similar(selectdim(w, nd+1, 1))
-
-    # Accumulate total density into scratch (in-place, no allocation)
-    ρ_total .= zero(FT)
-    for α in 1:nspecies
-        ρ_total .+= selectdim(ρ, nd+1, α)
+    _total_density!(ρ_total, ρ, nspecies(model), nd)
+    w .= zero(eltype(w))
+    for int in model.interactions
+        add_field!(w, int, ρ, ρ_total, model.rho0, nd)
     end
-
-    # Overwrite ρ_total in-place with the compressibility term to avoid a second allocation:
-    # comp_term = (ζ / ρ₀)(ρ₊ / ρ₀ - 1)
-    @. ρ_total = (kappa / rho0) * (ρ_total / rho0 - one(FT))
-
-    # Field for each species
-    for α in 1:nspecies
-        w_α = selectdim(w, nd+1, α)
-        w_α .= ρ_total
-        for β in 1:nspecies
-            if chi[α, β] != zero(FT)
-                w_α .+= (chi[α, β] / rho0) .* selectdim(ρ, nd+1, β)
-            end
-        end
-    end
-end
-
-"""
-    compute_bulk_fields(model::EoSModel, bulk_densities::Vector{Float64})
-
-Compute bulk (uniform) fields from bulk densities. Returns a vector of field values, one per species.
-"""
-function compute_bulk_fields(model::EoSModel, bulk_densities::AbstractVector{T}) where {T<:AbstractFloat}
-    nspecies = length(bulk_densities)
-    FT = eltype(bulk_densities)
-    chi = FT.(model.params.chi.values)
-    rho0 = FT(model.rho0)
-    kappa = FT(model.kappa)
-
-    ρ_total = sum(bulk_densities)
-    comp_term = (kappa / rho0) * (ρ_total / rho0 - one(FT))
-
-    w_bulk = zeros(FT, nspecies)
-    for α in 1:nspecies
-        w_bulk[α] = comp_term
-        for β in 1:nspecies
-            w_bulk[α] += (chi[α, β] / rho0) * bulk_densities[β]
-        end
-    end
-    return w_bulk
+    return w
 end
 
 """
@@ -542,7 +499,7 @@ Orientation-dependent Maier-Saupe mean field
 w_MS,α(r,u) = -(3/(2ρ0)) Σ_β ν_αβ Σ_ab R_ab^β(r) u_a u_b
 ```
 evaluated at each of the propagator's `n_orient` orientation-grid nodes (`sht.u_nodes`),
-for every species `α` (`ρ0 = system.model.rho0`, `ν = system.model.params.nu`).
+for every species `α` (`ρ0 = system.model.rho0`, `ν` from the model's [`MaierSaupe`](@ref) interaction).
 `R_tensor` has shape `(ngrid...,nspecies,6)` (`compute_orientation_moments`,
 `_Q_PAIRS`-ordered; the sum over the full 9 `(a,b)` pairs is recovered from the 6
 stored components via `_Q_PAIR_WEIGHT`).
@@ -561,7 +518,7 @@ function compute_maier_saupe_field(system::SCFTWLCSystem, R_tensor)
     nd = dimension(system)
     FT = eltype(R_tensor)
     nspecies = length(system.model.groups.flattenedgroups)
-    nu = FT.(system.model.params.nu.values)
+    nu = FT.(maier_saupe_nu(system.model))
     rho0 = FT(system.model.rho0)
     u_nodes = system.propagator.sht.u_nodes
     n_orient = size(u_nodes, 2)
@@ -647,10 +604,11 @@ summed over every molecule type (chains and solvents, unified — a solvent is j
 For grand-canonical molecule types, the fugacity/bulk correction exactly cancels the propagator's `exp(±w_bulk_sum)` shift factor so `Q̃` is used directly with no extra correction.
 For canonical molecule types, the shift factor does *not* cancel inside `log`, so it must be subtracted explicitly.
 
-`R_tensor` (WLC only, `nothing` for DGC/ideal systems — see `compute_orientation_moments`,
-above), when provided, adds the Maier-Saupe orientational self-energy `U_MS` and its
-double-counting correction `wMSρ_sum = 2×U_MS` (net contribution to `H`: `-U_MS`);
-omitting it (`nu=0` or a non-WLC system) reproduces the exact pre-Maier-Saupe formula.
+`U_int + U_comp` above stands for the sum of every interaction's `field_energy` (see
+[`SCFTInteractionModel`](@ref)). `R_tensor` (orientation-resolved systems with a
+[`MaierSaupe`](@ref) interaction; `nothing` otherwise — see `compute_orientation_moments`)
+is passed to the interactions as auxiliary state; Maier-Saupe then contributes its
+self-energy minus its double-counting correction, `-U_MS`.
 """
 function free_energy(system::SCFTSystem, ρ, w, Q;
                      V_eff=nothing, w_bulk=nothing, R_tensor=nothing)
@@ -669,10 +627,6 @@ function free_energy(system::SCFTSystem, ρ, w, Q;
         w_bulk = compute_bulk_fields(system.model, compute_bulk_densities(system))
     end
 
-    chi = system.model.params.chi.values
-    rho0 = system.model.rho0
-    kappa = system.model.kappa
-
     # Periodic composite-trapezoidal integral: sum(f)*prod(dz). Deliberately NOT the
     # general-purpose `∫` (Simpson's rule assuming non-periodic spacing dz=L/(N-1)) —
     # `structure_dz` returns the *periodic* spacing dz=L/N, so `∫` on a periodic grid
@@ -682,25 +636,19 @@ function free_energy(system::SCFTSystem, ρ, w, Q;
     # consistent with V_eff (and with each other) regardless of caller.
     per_∫(f) = sum(f) * prod(dz)
 
-    # U_int = (1/ρ₀) ∫ Σ_{α<β} χ_αβ ρ_α ρ_β dr
-    U_int_integrand = zeros(ngrid...)
-    for α in 1:nspecies
-        for β in (α+1):nspecies
-            if chi[α, β] != 0.0
-                U_int_integrand .+= chi[α, β] .* Array(selectdim(ρ, nd+1, α)) .* Array(selectdim(ρ, nd+1, β))
-            end
-        end
-    end
-    U_int = per_∫(U_int_integrand) / rho0
-
-    # U_comp = (ζ / 2) ∫ (ρ₊/ρ₀ - 1)² dr
-    # Consistent with w_comp = ζ/ρ₀ · (ρ₊/ρ₀ − 1) = δU_comp/δρ_α.
+    # Host copies of the densities (free_energy is a diagnostic, not on the hot path).
+    model = system.model
+    ρ_host = Array(ρ)
     ρ_total = zeros(ngrid...)
-    for α in 1:nspecies
-        ρ_total .+= Array(selectdim(ρ, nd+1, α))
+    _total_density!(ρ_total, ρ_host, nspecies, nd)
+
+    # Interaction energies beyond the generic -Σ∫wρ term (see SCFTInteractionModel):
+    # U for every scalar-field interaction, -U_MS for Maier-Saupe.
+    aux = (; R_tensor)
+    U = 0.0
+    for int in model.interactions
+        U += field_energy(int, ρ_host, ρ_total, model.rho0, nd, per_∫, aux)
     end
-    U_comp_integrand = (kappa / 2.0) .* (ρ_total ./ rho0 .- 1.0) .^ 2
-    U_comp = per_∫(U_comp_integrand)
 
     # -Σ_K ∫ w_K ρ_K dr
     wρ_sum = 0.0
@@ -731,34 +679,7 @@ function free_energy(system::SCFTSystem, ρ, w, Q;
         end
     end
 
-    # Maier-Saupe orientational self-energy and its double-counting correction (WLC
-    # only — R_tensor is `nothing` for DGC/ideal systems, which never build one).
-    # U_MS = -(3/(4ρ0)) ΣΣ ν_αβ ∫ R^α:R^β dr; the correction wMSρ_sum = 2×U_MS exactly
-    # (Euler's homogeneous-function theorem for a quadratic self-energy whose mean
-    # field is its own exact functional derivative — see
-    # /Users/pierrewalker/.claude/plans/radiant-brewing-sprout.md), so the net
-    # contribution to H is U_MS - wMSρ_sum = -U_MS, mirroring U_int - wρ_sum = -U_int.
-    U_MS = 0.0
-    if R_tensor !== nothing
-        nu = system.model.params.nu.values
-        ms_prefactor = 3.0 / (4.0 * rho0)
-        RR_integrand = zeros(ngrid...)
-        for α in 1:nspecies
-            Rα = selectdim(R_tensor, nd + 1, α)
-            for β in 1:nspecies
-                nu[α, β] == 0.0 && continue
-                Rβ = selectdim(R_tensor, nd + 1, β)
-                for j in eachindex(_Q_PAIRS)
-                    RR_integrand .+= (_Q_PAIR_WEIGHT[j] * nu[α, β]) .*
-                        Array(selectdim(Rα, nd + 1, j)) .* Array(selectdim(Rβ, nd + 1, j))
-                end
-            end
-        end
-        U_MS = -ms_prefactor * per_∫(RR_integrand)
-    end
-    wMSρ_sum = 2 * U_MS
-
-    H = U_int + U_comp + U_MS - wρ_sum - wMSρ_sum + molecule_sum
+    H = U - wρ_sum + molecule_sum
     return H
 end
 
