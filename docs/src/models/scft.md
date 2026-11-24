@@ -13,7 +13,7 @@ density profile, SCFT solves for a set of self-consistent mean fields `w_α(r)`,
 *species* (monomer type, e.g. `"A"`/`"B"` in a diblock — not one per bead position along
 the chain), such that the density a single chain produces in that field matches the
 density that generated it. This makes it substantially cheaper for large, flexible chain
-architectures, at the cost of the coarser Flory-Huggins/Gaussian-chain approximations it
+architectures, at the cost of the coarser Flory-Huggins/Gaussian- / Worm-like-chain approximations it
 relies on in place of a full pairwise free-energy functional.
 
 - [`SCFTSystem`](@ref ClassicalDFT.SCFTSystem) (see [System](../api/system.md)) — composes an

@@ -4,6 +4,7 @@ using ClassicalDFT
 import ClassicalDFT: Clapeyron
 using Adapt
 using Makie
+using Random
 
 _maybe_texlabel(s, latex::Bool; upright::Bool=false) = latex ? ClassicalDFT.texlabel(s; upright=upright) : s
 
@@ -527,27 +528,79 @@ function _tile_to_cover(coords_native::Vector{Float64}, L::Real, lo::Real, hi::R
     return vcat([coords_native .+ t * L for t in t_lo:t_hi]...), t_lo, t_hi
 end
 
+# Catmull-Rom spline through `pts` (a Vector of (x,y) tuples), `n_per_seg` points per
+# input segment -- a rendering-only smoothness choice for a flexible (non-rigid) bond
+# run in `_draw_chain!` below; the underlying sampled bead positions stay exactly `pts`
+# regardless (only how the curve between them is drawn changes).
+function _catmull_rom_xy(pts; n_per_seg::Int=16)
+    n = length(pts)
+    n < 2 && return Float64[p[1] for p in pts], Float64[p[2] for p in pts]
+    ext = vcat([pts[1]], pts, [pts[end]])
+    xs = Float64[]; ys = Float64[]
+    for i in 2:length(ext)-2
+        p0, p1, p2, p3 = ext[i-1], ext[i], ext[i+1], ext[i+2]
+        for t in range(0.0, 1.0; length=n_per_seg)
+            t2 = t * t; t3 = t2 * t
+            x = 0.5 * ((2*p1[1]) + (-p0[1]+p2[1])*t + (2*p0[1]-5*p1[1]+4*p2[1]-p3[1])*t2 + (-p0[1]+3*p1[1]-3*p2[1]+p3[1])*t3)
+            y = 0.5 * ((2*p1[2]) + (-p0[2]+p2[2])*t + (2*p0[2]-5*p1[2]+4*p2[2]-p3[2])*t2 + (-p0[2]+3*p1[2]-3*p2[2]+p3[2])*t3)
+            push!(xs, x); push!(ys, y)
+        end
+    end
+    return xs, ys
+end
+
+# Draw one sample_chain conformation `R` (bead positions), split into per-species runs
+# from `seq` (species index per bead) so a rigid run (lp_species[s]==Inf, thick straight
+# line -- true to the actual bead positions, which are exactly collinear by construction)
+# reads differently from a flexible one (thin Catmull-Rom-smoothed curve). Consecutive
+# runs share their boundary bead (`lo2 = lo - 1` past the first run) so the drawn
+# segments visually connect at the true bond between them. `alpha` distinguishes separate
+# chains drawn on the same axis (fading, not a dash pattern, so a thick rigid run still
+# reads as one continuous rod rather than a stack of disconnected blocks).
+function _draw_chain!(ax, R, seq, lp_species, species_color, rod_linewidth, coil_linewidth, alpha)
+    breaks = [1]
+    for k in 2:length(seq)
+        seq[k] != seq[k-1] && push!(breaks, k)
+    end
+    push!(breaks, length(seq) + 1)
+    for i in 1:length(breaks)-1
+        lo = breaks[i]; hi = breaks[i+1] - 1
+        lo2 = i == 1 ? lo : lo - 1
+        s = seq[lo]
+        pts = [(R[j][1], R[j][2]) for j in lo2:hi]
+        if isinf(lp_species[s])
+            xs = [p[1] for p in pts]; ys = [p[2] for p in pts]
+            Makie.lines!(ax, xs, ys; color=species_color[s], linewidth=rod_linewidth, alpha=alpha)
+        else
+            xs, ys = _catmull_rom_xy(pts)
+            Makie.lines!(ax, xs, ys; color=species_color[s], linewidth=coil_linewidth, alpha=alpha)
+        end
+    end
+end
+
 """
-    ClassicalDFT.plot_orientation_field(system::ClassicalDFT.SCFTWLCSystem, ρ, q_in, q_out;
+    ClassicalDFT.plot_orientation_field(system::ClassicalDFT.SCFTWLCSystem, ρ;
                                          species=1, chain=1, colormap=:RdBu, arrow_step=3,
                                          arrow_scale=2.0, font=nothing, width=:single,
-                                         dpi=ClassicalDFT.CDFT_DPI)
+                                         dpi=ClassicalDFT.CDFT_DPI, q_in=nothing, q_out=nothing)
 
 Plot `species`'s density profile (from `ρ`) with [`mean_orientation_field`](@ref)'s
 `⟨u⟩(r)` overlaid as an arrow map, for `dimension(system) ∈ {1,2}`. For 1D, arrows are
 drawn along the (only) tracked axis at a fixed height, matching this package's own
 `Makie.plot(system, profiles)` convention for the density panel above them; for 2D, the
 density is a heatmap and arrows are subsampled every `arrow_step`-th grid point in each
-direction.
+direction. `q_in`/`q_out` are computed from `ρ` internally
+([`compute_propagator_fields`](@ref)) unless both are given directly as keywords.
 """
-function ClassicalDFT.plot_orientation_field(system::ClassicalDFT.SCFTWLCSystem, ρ, q_in, q_out;
+function ClassicalDFT.plot_orientation_field(system::ClassicalDFT.SCFTWLCSystem, ρ;
                                                species::Int=1, chain::Int=1, colormap=:RdBu,
                                                arrow_step::Int=3, arrow_scale::Real=2.0,
-                                               font=nothing, width::Symbol=:single, dpi::Real=ClassicalDFT.CDFT_DPI)
+                                               font=nothing, width::Symbol=:single, dpi::Real=ClassicalDFT.CDFT_DPI,
+                                               q_in=nothing, q_out=nothing)
     nd = ClassicalDFT.dimension(system)
     nd in (1, 2) || error("plot_orientation_field only supports dimension(system) ∈ {1,2}, got $nd")
     structure = system.structure
-    mean_u = ClassicalDFT.mean_orientation_field(system, q_in, q_out)
+    mean_u = ClassicalDFT.mean_orientation_field(system, ρ; q_in=q_in, q_out=q_out)
     coords = _native_grid(structure)
     species_name = system.model.groups.flattenedgroups[species]
 
@@ -582,7 +635,9 @@ end
 
 """
     ClassicalDFT.plot_chain_conformations(system::ClassicalDFT.SCFTWLCSystem, ρ, chains;
-                                           colormap=:RdBu, chain_colors=ClassicalDFT.CDFT_DEFAULT_COLORS,
+                                           chain=1, colormap=:RdBu,
+                                           species_colors=ClassicalDFT.CDFT_DEFAULT_COLORS,
+                                           rod_linewidth=7, coil_linewidth=2, margin=0.6,
                                            font=nothing, width=:single, dpi=ClassicalDFT.CDFT_DPI)
 
 Plot one or more [`sample_chain`](@ref) conformations over the two-species density
@@ -591,12 +646,29 @@ axis to draw a path in, and the sampled-conformation machinery itself is 1D/2D/3
 — use `sample_chain`'s own return value directly for a 1D or 3D system).
 
 `chains` is a `Vector` of `sample_chain`'s own return type (`Vector{Vector{Float64}}`),
-or a single one. Since a sampled path can legitimately extend outside the structure's
-own periodic box, the background is tiled to whatever extent the chains actually reach,
-rather than clipped to one period.
+or a single one, all sampled from molecule type `chain` (matching whatever `chain` they
+were themselves sampled with). Each chain is drawn per species rather than as one
+uniform curve: a run of beads belonging to an exactly rigid species (`lp=Inf`) is drawn
+as a thick straight line (the sampled positions really are exactly collinear there, by
+construction — see [`sample_chain`](@ref)'s docstring), a run belonging to a flexible
+species as a thin Catmull-Rom-smoothed curve through the sampled bead positions (a
+rendering choice only — the underlying samples are still the exact bead positions). One
+color per species (assigned from `species_colors` in first-encountered order along
+`chains[1]`'s own sequence); with more than one chain, later ones are distinguished by
+opacity (`alphas`, cycling) rather than color or linestyle, so species identity reads
+the same for every chain drawn and a thick rigid run still reads as one continuous rod
+rather than a dashed stack of blocks.
+
+Since a sampled path can legitimately extend outside the structure's own periodic box,
+the background is tiled to whatever extent the chains actually reach (plus `margin`);
+the axes are then cropped to that same extent, rather than left at the full tiled
+background's own (typically larger, whole-period-multiple) extent.
 """
 function ClassicalDFT.plot_chain_conformations(system::ClassicalDFT.SCFTWLCSystem, ρ, chains;
-                                                colormap=:RdBu, chain_colors=ClassicalDFT.CDFT_DEFAULT_COLORS,
+                                                chain::Int=1, colormap=:RdBu,
+                                                species_colors=ClassicalDFT.CDFT_DEFAULT_COLORS,
+                                                rod_linewidth::Real=7, coil_linewidth::Real=2,
+                                                margin::Real=0.6, alphas=(1.0, 0.55, 0.3),
                                                 font=nothing, width::Symbol=:single, dpi::Real=ClassicalDFT.CDFT_DPI)
     ClassicalDFT.dimension(system) == 2 || error("plot_chain_conformations only supports dimension(system) == 2")
     chains isa AbstractVector{<:AbstractVector{<:AbstractVector}} || (chains = [chains])
@@ -610,23 +682,77 @@ function ClassicalDFT.plot_chain_conformations(system::ClassicalDFT.SCFTWLCSyste
 
     all_x = vcat((p[1] for R in chains for p in R)...)
     all_y = vcat((p[2] for R in chains for p in R)...)
-    x_tiled, _, _ = _tile_to_cover(x_native, Lx, minimum(all_x), maximum(all_x))
-    y_tiled, _, _ = _tile_to_cover(y_native, Ly, minimum(all_y), maximum(all_y))
+    xlo, xhi = minimum(all_x) - margin, maximum(all_x) + margin
+    ylo, yhi = minimum(all_y) - margin, maximum(all_y) + margin
+    x_tiled, _, _ = _tile_to_cover(x_native, Lx, xlo, xhi)
+    y_tiled, _, _ = _tile_to_cover(y_native, Ly, ylo, yhi)
     nxt, nyt = length(x_tiled) ÷ length(x_native), length(y_tiled) ÷ length(y_native)
     diff_tiled = repeat(diff, nxt, nyt)
+
+    seq = system.species.sequence[chain]
+    lp_species = system.model.params.lp.values
+    species_present = unique(seq)
+    colors = Dict(s => species_colors[mod1(i, length(species_colors))] for (i, s) in enumerate(species_present))
 
     fig = _cdft_figure(width, dpi, font)
     ax = Makie.Axis(fig[1, 1], xlabel="x", ylabel="y", aspect=Makie.DataAspect(),
                      title="Sampled chain conformation(s)")
     Makie.heatmap!(ax, x_tiled, y_tiled, diff_tiled; colormap=colormap, colorrange=(-1, 1))
     for (i, R) in enumerate(chains)
-        color = chain_colors[mod1(i, length(chain_colors))]
-        xline = [p[1] for p in R]; yline = [p[2] for p in R]
-        Makie.lines!(ax, xline, yline; color=color, linewidth=2.5, label="chain $i")
-        Makie.scatter!(ax, xline, yline; color=color, markersize=8)
+        _draw_chain!(ax, R, seq, lp_species, colors, rod_linewidth, coil_linewidth,
+                     alphas[mod1(i, length(alphas))])
     end
-    length(chains) > 1 && Makie.axislegend(ax; position=:rt)
+    Makie.xlims!(ax, xlo, xhi)
+    Makie.ylims!(ax, ylo, yhi)
+
+    species_elements = [Makie.LineElement(color=colors[s], linewidth=isinf(lp_species[s]) ? rod_linewidth : coil_linewidth)
+                         for s in species_present]
+    species_labels = [string(system.model.groups.flattenedgroups[s], isinf(lp_species[s]) ? " (rigid)" : " (flexible)")
+                       for s in species_present]
+    if length(chains) > 1
+        chain_elements = [Makie.LineElement(color=:gray30, alpha=alphas[mod1(i, length(alphas))])
+                           for i in eachindex(chains)]
+        chain_labels = ["chain $i" for i in eachindex(chains)]
+        Makie.Legend(fig[1, 2], [species_elements, chain_elements], [species_labels, chain_labels], ["species", "sample"])
+    else
+        Makie.axislegend(ax, species_elements, species_labels; position=:rt)
+    end
     return fig
+end
+
+"""
+    ClassicalDFT.plot_chain_conformations(system::ClassicalDFT.SCFTWLCSystem, ρ,
+                                           anchor_beads::AbstractVector{<:Integer};
+                                           chain::Int=1, orientation::Symbol=:mean,
+                                           rng::Random.AbstractRNG=Random.default_rng(),
+                                           q_in=nothing, q_out=nothing, kwargs...)
+
+Convenience method: anchors each of `anchor_beads` via
+[`terminal_orientation_anchor`](@ref) (`orientation` forwarded to it), draws one
+[`sample_chain`](@ref) conformation from each anchor in turn (`rng` is threaded through
+in order, not reset per anchor, so distinct anchors still get distinct realizations),
+and plots them exactly as the `(system, ρ, chains; kwargs...)` method above — the one
+that still takes pre-sampled `chains` directly, for callers who already built their own
+(e.g. with per-chain `rng`s, or non-terminal anchor beads). Every other keyword argument
+is forwarded to it unchanged.
+
+`q_in`/`q_out` are computed from `ρ` internally ([`compute_propagator_fields`](@ref))
+unless both are given directly as keywords — resolved once here regardless, then reused
+for every anchor bead (never recomputed per bead).
+"""
+function ClassicalDFT.plot_chain_conformations(system::ClassicalDFT.SCFTWLCSystem, ρ,
+                                                 anchor_beads::AbstractVector{<:Integer};
+                                                 chain::Int=1, orientation::Symbol=:mean,
+                                                 rng::Random.AbstractRNG=Random.default_rng(),
+                                                 q_in=nothing, q_out=nothing, kwargs...)
+    q_in, q_out = ClassicalDFT.resolve_propagator_fields(system, ρ, q_in, q_out)
+    chains = map(anchor_beads) do bead
+        r0, u0, _ = ClassicalDFT.terminal_orientation_anchor(system, ρ, bead;
+                                                               chain=chain, orientation=orientation,
+                                                               q_in=q_in, q_out=q_out)
+        ClassicalDFT.sample_chain(system, ρ, bead, r0, u0; chain=chain, rng=rng, q_in=q_in, q_out=q_out)
+    end
+    return ClassicalDFT.plot_chain_conformations(system, ρ, chains; chain=chain, kwargs...)
 end
 
 end

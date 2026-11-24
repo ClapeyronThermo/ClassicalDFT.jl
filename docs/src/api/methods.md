@@ -38,7 +38,11 @@ ClassicalDFT.adsorption
 A [`WLCPropagator`](@ref ClassicalDFT.WLCPropagator) system tracks each species' full 3D
 bond orientation alongside position, so density isn't the only quantity that can be
 resolved in space — see the [Worm-Like Chains & Orientational Order](../tutorials/wlc.md)
-tutorial.
+tutorial. Every function below (and in the two sections after it) takes the converged
+`ρ` directly; `q_in`/`q_out` are computed from it internally
+([`compute_propagator_fields`](@ref)) unless passed as the optional `q_in`/`q_out`
+keywords, for callers who already have them (or want to reuse them across several calls
+without recomputing).
 
 ```@docs
 ClassicalDFT.compute_densities!
@@ -57,6 +61,7 @@ conditioned on one bead sitting at a chosen (or most-likely/mean) position and
 orientation:
 
 ```@docs
+ClassicalDFT.compute_propagator_fields
 ClassicalDFT.bead_marginal_density
 ClassicalDFT.terminal_orientation_anchor
 ClassicalDFT.sample_chain
@@ -68,7 +73,8 @@ ClassicalDFT.periodic_interp
 `plot_orientation_field`/`plot_chain_conformations` are stubs in the main package;
 loading a Makie backend (e.g. `using CairoMakie`) provides the actual methods, following
 the same pattern `Makie.plot(system, ρ)` (see [System](../api/system.md)) already uses
-for density profiles.
+for density profiles. Like every function above, both take `ρ` directly and compute
+`q_in`/`q_out` internally unless given as keywords.
 
 ```@docs
 ClassicalDFT.plot_orientation_field

@@ -9,11 +9,6 @@ rod-coil diblock melt (one exactly rigid species, one flexible) and shows the th
 things that unlocks beyond a density profile: a nematic order parameter, a mean
 orientation vector field, and actual sampled single-chain conformations.
 
-The parameters below (`χN=16`, `f=0.7`, and a conformational-asymmetry parameter
-`ν⁻²=10`) match the lamellar point of Fig. 11 in Tang et al., *Macromolecules* **48**,
-9060 (2015) — a convenient, literature-anchored starting point, not a requirement of the
-model itself.
-
 ## Building the worm-like-chain model
 
 `SCFTWormLikeChainFluid` takes the same `(name, sequence)` component list as
@@ -104,24 +99,11 @@ gives the local nematic order `S_α(x) = (3⟨u_x²⟩_α(x)-1)/2` (`S=1`: fully
 the domain normal; `S=-1/2`: fully perpendicular) — but computing it needs `q_in`/`q_out`
 resolved in orientation, one more `propagate!` call at the converged field (the same
 extra step `compute_densities!` takes internally to build `ρ` from a marginalized
-version of the same quantity):
+version of the same quantity). Every WLC function below takes `ρ` and computes
+`q_in`/`q_out` internally, so none of that is visible here:
 
 ```julia
-julia> w = zeros(size(ρ)...);
-
-julia> w_bulk = ClassicalDFT.compute_bulk_fields(system.model, ClassicalDFT.compute_bulk_densities(system));
-
-julia> ClassicalDFT.compute_fields!(system, ρ, w);
-
-julia> cache_propagator = ClassicalDFT.preallocate_propagator(system, system.propagator, ρ, CPU());
-
-julia> ClassicalDFT.propagate!(system, ρ, w, cache_propagator; w_bulk=w_bulk);
-
-julia> q_in = ClassicalDFT.cache_q_in(cache_propagator);
-
-julia> q_out = ClassicalDFT.cache_q_out(cache_propagator);
-
-julia> S = orientation_order_parameter(system, q_in, q_out; axis=1);
+julia> S = orientation_order_parameter(system, ρ; axis=1);
 ```
 
 `S` is nonzero even for a perfectly head-tail-symmetric alignment (`u` and `-u` equally
@@ -130,9 +112,9 @@ true polar vector `⟨u⟩(r)`, which is only nonzero when there's a genuine dir
 bias — here, because each rod is covalently bonded to a coil at one specific end:
 
 ```julia
-julia> mean_u = mean_orientation_field(system, q_in, q_out);
+julia> mean_u = mean_orientation_field(system, ρ);
 
-julia> plot_orientation_field(system, ρ, q_in, q_out; species=1)
+julia> plot_orientation_field(system, ρ; species=1)
 ```
 
 ![Rod density with its mean orientation field overlaid](../assets/wlc_orientation_field.png)
@@ -146,7 +128,9 @@ for what's driving it).
 
 `plot_orientation_field` needs a Makie backend loaded (e.g. `using CairoMakie`) — it's a
 stub in the main package otherwise, following the same pattern as `Makie.plot(system,
-ρ)` itself.
+ρ)` itself. Each of the three calls above reruns `propagate!` on its own — fine here,
+but wasteful when calling several of these functions back to back; see the note at the
+end of this section for how to avoid that.
 
 ## Sampling single-chain conformations
 
@@ -159,32 +143,61 @@ away from that anchor:
 ```julia
 julia> using Random
 
-julia> r0, u0, mean_u_1 = terminal_orientation_anchor(system, q_in, q_out, 1; orientation=:mean);
+julia> r0, u0, mean_u_1 = terminal_orientation_anchor(system, ρ, 1; orientation=:mean);
 
-julia> R1 = sample_chain(system, q_in, q_out, 1, r0, u0; rng=MersenneTwister(1));
+julia> R1 = sample_chain(system, ρ, 1, r0, u0; rng=MersenneTwister(1));
 
-julia> r0N, u0N, mean_u_N = terminal_orientation_anchor(system, q_in, q_out, N_A + N_B; orientation=:mean);
+julia> r0N, u0N, mean_u_N = terminal_orientation_anchor(system, ρ, N_A + N_B; orientation=:mean);
 
-julia> R2 = sample_chain(system, q_in, q_out, N_A + N_B, r0N, u0N; rng=MersenneTwister(2));
+julia> R2 = sample_chain(system, ρ, N_A + N_B, r0N, u0N; rng=MersenneTwister(2));
 
 julia> plot_chain_conformations(system, ρ, [R1, R2])
 ```
 
-![Two sampled chain conformations over the density profile](../assets/wlc_chain_conformations.png)
+![Two sampled chain conformations, rod segments thick and coil segments thin, over the density difference φ_A-φ_B](../assets/wlc_chain_conformations.png)
 
 Bead `1` is the rod's free end, bead `N_A+N_B` the coil's — each anchored independently
 at its own most-likely position. Every rod-rod bond is exactly rigid (`lp=Inf`), so the
-rod segment of each sampled chain is a perfectly straight line; only the flexible coil
-bonds (and the rod-coil junction) are genuinely random per call. Since a sampled
-conformation can legitimately wander outside the structure's own periodic box (unlike a
-density profile, which never needs to), `plot_chain_conformations` tiles the background
-to whatever extent the chains actually reach, rather than clipping them.
+rod segment of each sampled chain is a perfectly straight line, drawn thick; only the
+flexible coil bonds (and the rod-coil junction) are genuinely random per call, drawn as
+a thin curve through the sampled bead positions. `chain 2` (the coil-anchored draw) is
+faded relative to `chain 1` so the two stay distinguishable without needing a separate
+color per chain — species identity (rod vs. coil) is what the color encodes instead.
+Since a sampled conformation can legitimately wander outside the structure's own
+periodic box (unlike a density profile, which never needs to), `plot_chain_conformations`
+tiles the background to whatever extent the chains actually reach and crops the axes to
+that same extent, rather than showing the full periodic structure around them.
+
+`plot_chain_conformations(system, ρ, [1, N_A + N_B]; orientation=:mean,
+rng=MersenneTwister(1))` anchors and samples both chains internally and produces the
+same figure in one call, without naming `r0`/`u0`/`mean_u_1` individually.
+
+Every call above (`orientation_order_parameter`, `mean_orientation_field`,
+`terminal_orientation_anchor` ×2, `sample_chain` ×2) reran `propagate!` from scratch —
+six times, for the one converged `ρ`. Pass `q_in`/`q_out` explicitly, computed once via
+`compute_propagator_fields`, to skip all but the first:
+
+```julia
+julia> q_in, q_out = compute_propagator_fields(system, ρ);
+
+julia> S = orientation_order_parameter(system, ρ; axis=1, q_in=q_in, q_out=q_out);
+
+julia> r0, u0, _ = terminal_orientation_anchor(system, ρ, 1; orientation=:mean, q_in=q_in, q_out=q_out);
+
+julia> R1 = sample_chain(system, ρ, 1, r0, u0; rng=MersenneTwister(1), q_in=q_in, q_out=q_out);
+```
+
+Every function in this tutorial takes `q_in`/`q_out` this same way: omit them and they're
+computed from `ρ`; pass them (e.g. from a previous call, or from `compute_propagator_fields`
+directly) and they're used as-is, with no recomputation.
 
 ## Next steps
 
 - `nu` (see `SCFTWormLikeChainFluid`'s docstring) adds an explicit Maier-Saupe
   orientational coupling between species, on top of the immiscibility-driven alignment
-  shown here.
+  shown here. `compute_propagator_fields` doesn't support `nu != 0` models — its
+  converged `q_in`/`q_out` depend on state `converge!` tracks across iterations, not
+  `ρ` alone — and throws rather than silently returning the wrong field.
 - `orientation_order_parameter`/`mean_orientation_field`/`sample_chain` all work
   identically for `dimension(system) ∈ {1,2,3}` (only `plot_chain_conformations` itself
   is currently 2D-only) — see [Methods](../api/methods.md) for the full list.
