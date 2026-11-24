@@ -39,14 +39,9 @@ remaining `3-nd` directions (e.g. a 1D structure resolves density along `x` only
 treating the system as uniform in `y,z`) — a bond's `y`/`z` displacement doesn't change
 an `x`-only density, so it is correctly not tracked, while bending (which correlates the
 *full* 3D orientation between consecutive bonds) is entirely unaffected by `nd` and
-always uses the complete `u`. Every chain in `species.sequence` must be linear: node `a`
-and `b` (in
-`species.sequence[c]`'s own order, which SCFT's `expand_groups` already builds in exact
-chain-position order — *not* `species.levels`'s BFS-depth-from-highest-degree-root
-labeling, which is unrelated to chain position and generally is not `1:N_c` even for an
-unbranched chain) must be bonded iff `b == a+1`. Branched `mol_structure` is rejected with
-a clear error, since v1 has no sibling-combination logic for the bend-then-translate
-recursion.
+always uses the complete `u`. Chains may be linear or branched (any tree; rings are
+rejected): each is rooted at a chain end ([`OrientedTree`](@ref), built by
+`_oriented_tree`), and branch points are freely jointed.
 
 `L_max` (keyword, default 8) sets both the spherical-harmonic truncation degree and, via
 `SHTPlan`, the orientation quadrature grid size — larger `L_max` is needed to resolve
@@ -70,18 +65,7 @@ function WLCPropagator(
     segment_species = species.sequence
     N = length.(segment_species)
     nchains = length(N)
-    for c in 1:nchains
-        ig = species.i_groups[c]
-        bonds = species.n_intergroups[c]
-        Nc = N[c]
-        for a in 1:Nc, b in (a+1):Nc
-            is_bonded = bonds[ig[a], ig[b]] != 0
-            is_bonded == (b == a + 1) || error(
-                "WLCPropagator only supports LINEAR chains (v1 has no branching " *
-                "support) — chain $c is not a simple path in its own chain-position order."
-            )
-        end
-    end
+    trees = [_oriented_tree(species, c) for c in 1:nchains]
 
     sht = SHTPlan(L_max, FP)
     n_orient = sht.n_theta * sht.n_phi
@@ -184,7 +168,7 @@ function WLCPropagator(
 
     sht = Adapt.adapt(device, sht)
 
-    return WLCPropagator(sht, device_trans_kernel, device_trans_kernel_conj, device_bend_eig, device_gauss_kernel)
+    return WLCPropagator(sht, device_trans_kernel, device_trans_kernel_conj, device_bend_eig, device_gauss_kernel, trees)
 end
 
 function preallocate_propagator(system, propagator::WLCPropagator, ρ, backend::Backend)
@@ -209,6 +193,8 @@ function preallocate_propagator(system, propagator::WLCPropagator, ρ, backend::
     qgrid_buf = allocate(backend, FP, ngrid..., n_orient)
     qlm_buf = allocate(backend, FP, ngrid..., nlm)
     scal_buf = allocate(backend, FP, ngrid...)      # orientation-free message across Gaussian bonds
+    acc_buf = allocate(backend, FP, ngrid..., n_orient)  # parent q_in × sibling messages
+    msg_buf = allocate(backend, FP, ngrid..., n_orient)  # one bottom-up message
 
     if backend isa CPU
         P  = plan_rfft(buf_r,  1:nd; num_threads=Threads.nthreads())
@@ -218,7 +204,7 @@ function preallocate_propagator(system, propagator::WLCPropagator, ρ, backend::
         iP = plan_irfft(buf_c, ngrid[1], 1:nd)
     end
 
-    return (; q_in, q_out, buf_r, buf_c, child_buf, qgrid_buf, qlm_buf, scal_buf, P, iP)
+    return (; q_in, q_out, buf_r, buf_c, child_buf, qgrid_buf, qlm_buf, scal_buf, acc_buf, msg_buf, P, iP)
 end
 
 """
@@ -271,12 +257,23 @@ function _orientation_integral!(out, q, quad_weight::Vector, nd)
 end
 
 """
-    _wlc_linear_sweep!(q_in_c, q_out_c, buf_r, buf_c, child_buf, qgrid_buf, qlm_buf, scal_buf, P, iP,
-                        propagator, seg_spec, ef, nd, quad_weight)
+    _wlc_tree_sweep!(q_in_c, q_out_c, bufs, propagator, tree, seg_spec, ef, nd, quad_weight)
 
-Bottom-up (`q_in`)/top-down (`q_out`) discrete worm-like-chain sweep for one LINEAR chain
-(node order == chain-position order). `q_in_c`/`q_out_c` have shape
-`(ngrid..., n_orient, N_c)`.
+Discrete worm-like-chain sweep for one chain, linear or branched. `q_in_c`/`q_out_c` have
+shape `(ngrid..., n_orient, N_c)`; `tree` is the chain's [`OrientedTree`](@ref) (rooted at
+a chain end). The recursions below are written for a linear chain with the root at node 1
+(`q_in` runs root → leaves, `q_out` leaves → root); on a tree they apply edge by edge:
+
+- `q_in[j]` (root → leaves) is built from the product of the parent's `q_in` and the
+  bottom-up messages of `j`'s siblings, then bent and translated along bond (parent, j).
+- `q_out[k]` (leaves → root) is `ef(α(k))` times the product of the messages from all
+  of `k`'s children (each translated back along its bond, then bent).
+- A bead with two or more children is **freely jointed**: messages across it are averaged
+  over orientation instead of bent, so no bond at a branch point remembers another's
+  direction.
+- Bonds that touch a Gaussian bead are Gaussian bonds (see [`WLCPropagator`](@ref)).
+
+`Q̃` is read at `tree.qnode`, a leaf other than the root, where `q_out = ef`.
 
 `q_in[k](r,u)` is the statistical weight of the sub-chain `(1,...,k)` ending at node `k`
 at position `r`, with bond `(k-1,k)`'s direction equal to `u`. Node 1 has no incoming
@@ -342,52 +339,127 @@ Each of `q_in[k]`/`q_out[k]` carries exactly one factor of `ef(α(k))` — the s
 double-counting convention `_dgc_tree_sweep!` uses, corrected downstream via
 `exp(Δw_α)` in `compute_densities!`.
 """
-function _wlc_linear_sweep!(q_in_c, q_out_c, buf_r, buf_c, child_buf, qgrid_buf, qlm_buf, scal_buf, P, iP,
-                             propagator, seg_spec, ef, nd, quad_weight)
-    Nc = length(seg_spec)
-    sht = propagator.sht
+function _wlc_tree_sweep!(q_in_c, q_out_c, bufs, propagator, tree::OrientedTree, seg_spec, ef, nd, quad_weight)
+    (; buf_r, buf_c, child_buf, qgrid_buf, qlm_buf, scal_buf, acc_buf, msg_buf, P, iP) = bufs
     FT = eltype(q_in_c)
     four_pi = 4 * FT(pi)
-    gauss = propagator.gauss_kernel
+    (; order, parent, children) = tree
+    node(q, k) = selectdim(q, nd + 2, k)
 
-    selectdim(q_in_c, nd + 2, 1) .= ef(seg_spec[1]) ./ four_pi
-    for k in 2:Nc
-        bond_key = minmax(seg_spec[k-1], seg_spec[k])
-        prev = selectdim(q_in_c, nd + 2, k - 1)
-        if haskey(gauss, bond_key)
-            # Gaussian bond: ∫du q_in[k-1], Gaussian convolution, isotropic re-seed.
-            _orientation_integral!(scal_buf, prev, quad_weight, nd)
-            convolve!(scal_buf, scal_buf, gauss[bond_key], P, iP, buf_r, buf_c)
-            selectdim(q_in_c, nd + 2, k) .= ef(seg_spec[k]) .* scal_buf ./ four_pi
-            continue
+    # Leaves → root: q_out[k] = ef(α(k)) · Π_children message(child → k).
+    for k in Iterators.reverse(order)
+        q_k = node(q_out_c, k)
+        q_k .= ef(seg_spec[k])
+        free = length(children[k]) >= 2
+        for j in children[k]
+            _wlc_up_message!(msg_buf, node(q_out_c, j), minmax(seg_spec[k], seg_spec[j]), free,
+                             propagator, bufs, nd, quad_weight)
+            q_k .*= msg_buf
         end
-        wlc_bend!(child_buf, prev, propagator.bend_eig[bond_key], sht, qlm_buf, nd)
-        wlc_translate!(qgrid_buf, child_buf, propagator.trans_kernel[bond_key], buf_r, buf_c, P, iP, nd)
-        selectdim(q_in_c, nd + 2, k) .= ef(seg_spec[k]) .* qgrid_buf
     end
 
-    selectdim(q_out_c, nd + 2, Nc) .= ef(seg_spec[Nc])
-    for k in (Nc-1):-1:1
-        bond_key = minmax(seg_spec[k], seg_spec[k+1])
-        nxt = selectdim(q_out_c, nd + 2, k + 1)
-        if haskey(gauss, bond_key)
-            # Gaussian bond: orientation average of q_out[k+1], Gaussian convolution.
-            _orientation_integral!(scal_buf, nxt, quad_weight, nd)
-            scal_buf ./= four_pi
-            convolve!(scal_buf, scal_buf, gauss[bond_key], P, iP, buf_r, buf_c)
-            selectdim(q_out_c, nd + 2, k) .= ef(seg_spec[k]) .* scal_buf
-            continue
+    # Root → leaves: q_in[root] is an isotropic density; each child gets the parent's q_in
+    # times its siblings' messages, carried along the (parent, child) bond.
+    root = order[1]
+    node(q_in_c, root) .= ef(seg_spec[root]) ./ four_pi
+    for k in order
+        kids = children[k]
+        isempty(kids) && continue
+        free = length(kids) >= 2
+        for j in kids
+            acc_buf .= node(q_in_c, k)
+            for s in kids
+                s == j && continue
+                _wlc_up_message!(msg_buf, node(q_out_c, s), minmax(seg_spec[k], seg_spec[s]), free,
+                                 propagator, bufs, nd, quad_weight)
+                acc_buf .*= msg_buf
+            end
+            bond_key = minmax(seg_spec[k], seg_spec[j])
+            dest = node(q_in_c, j)
+            if haskey(propagator.gauss_kernel, bond_key)
+                _orientation_integral!(scal_buf, acc_buf, quad_weight, nd)
+                convolve!(scal_buf, scal_buf, propagator.gauss_kernel[bond_key], P, iP, buf_r, buf_c)
+                dest .= ef(seg_spec[j]) .* scal_buf ./ four_pi
+            else
+                if free
+                    _orientation_integral!(scal_buf, acc_buf, quad_weight, nd)
+                    child_buf .= scal_buf ./ four_pi
+                else
+                    wlc_bend!(child_buf, acc_buf, propagator.bend_eig[bond_key], propagator.sht, qlm_buf, nd)
+                end
+                wlc_translate!(qgrid_buf, child_buf, propagator.trans_kernel[bond_key], buf_r, buf_c, P, iP, nd)
+                dest .= ef(seg_spec[j]) .* qgrid_buf
+            end
         end
-        wlc_translate!(child_buf, nxt, propagator.trans_kernel_conj[bond_key], buf_r, buf_c, P, iP, nd)
-        wlc_bend!(qgrid_buf, child_buf, propagator.bend_eig[bond_key], sht, qlm_buf, nd)
-        selectdim(q_out_c, nd + 2, k) .= ef(seg_spec[k]) .* qgrid_buf
     end
     return nothing
 end
 
+# Bottom-up message from child j into its parent k across bond `bond_key`, written to `out`
+# (shape `(ngrid..., n_orient)`, indexed by k's own parent-bond direction). Rod bond:
+# translate q_out[j] back along j's bond, then bend (or orientation-average when k is a
+# branch point). Gaussian bond: orientation average, then Gaussian convolution.
+function _wlc_up_message!(out, q_out_j, bond_key, free, propagator, bufs, nd, quad_weight)
+    (; buf_r, buf_c, child_buf, qlm_buf, scal_buf, P, iP) = bufs
+    FT = eltype(out)
+    if haskey(propagator.gauss_kernel, bond_key)
+        _orientation_integral!(scal_buf, q_out_j, quad_weight, nd)
+        scal_buf ./= 4 * FT(pi)
+        convolve!(scal_buf, scal_buf, propagator.gauss_kernel[bond_key], P, iP, buf_r, buf_c)
+        out .= scal_buf
+    else
+        wlc_translate!(child_buf, q_out_j, propagator.trans_kernel_conj[bond_key], buf_r, buf_c, P, iP, nd)
+        if free
+            _orientation_integral!(scal_buf, child_buf, quad_weight, nd)
+            out .= scal_buf ./ (4 * FT(pi))
+        else
+            wlc_bend!(out, child_buf, propagator.bend_eig[bond_key], propagator.sht, qlm_buf, nd)
+        end
+    end
+    return out
+end
+
+"""
+    _oriented_tree(species, c)
+
+Build chain `c`'s [`OrientedTree`](@ref) from `species.i_groups`/`species.n_intergroups`,
+rooted at the first node (in node order) with at most one bond. For a linear chain in
+chain-position order this is node 1, so the sweep reduces exactly to the linear recursion.
+"""
+function _oriented_tree(species, c)
+    ig = species.i_groups[c]
+    bonded = species.n_intergroups[c][ig, ig] .!= 0
+    n = length(ig)
+    deg = vec(sum(bonded, dims=2))
+    root = n == 1 ? 1 : findfirst(<=(1), deg)
+    root === nothing && error("chain $c has no free end; WLCPropagator needs a tree (no rings).")
+    parent = zeros(Int, n)
+    children = [Int[] for _ in 1:n]
+    order = [root]
+    seen = falses(n); seen[root] = true
+    i = 1
+    while i <= length(order)
+        k = order[i]
+        for j in 1:n
+            if bonded[k, j] && !seen[j]
+                seen[j] = true
+                parent[j] = k
+                push!(children[k], j)
+                push!(order, j)
+            end
+        end
+        i += 1
+    end
+    length(order) == n || error("chain $c is not connected.")
+    leaves = [k for k in 1:n if isempty(children[k]) && k != root]
+    qnode = isempty(leaves) ? root : leaves[end]
+    return OrientedTree(order, parent, children, qnode)
+end
+
 function propagate!(system, propagator::WLCPropagator, ρ, δfδρ_res, q_in, q_out, buf_r, buf_c,
-                     child_buf, qgrid_buf, qlm_buf, scal_buf, P, iP)
+                     child_buf, qgrid_buf, qlm_buf, scal_buf, acc_buf, msg_buf, P, iP)
     nd = dimension(system)
+    bufs = (; buf_r, buf_c, child_buf, qgrid_buf, qlm_buf, scal_buf, acc_buf, msg_buf, P, iP)
     species = system.species
     sequence = species.sequence
     nchains = length(sequence)
@@ -397,8 +469,7 @@ function propagate!(system, propagator::WLCPropagator, ρ, δfδρ_res, q_in, q_
 
     for c in 1:nchains
         seg_spec = sequence[c]
-        _wlc_linear_sweep!(q_in[c], q_out[c], buf_r, buf_c, child_buf, qgrid_buf, qlm_buf, scal_buf, P, iP,
-                            propagator, seg_spec, ef, nd, qw_host)
+        _wlc_tree_sweep!(q_in[c], q_out[c], bufs, propagator, propagator.trees[c], seg_spec, ef, nd, qw_host)
 
         unique_species = unique(seg_spec)
         quad_weight = propagator.sht.quad_weight
@@ -419,7 +490,7 @@ end
     propagate!(system::SCFTSystem, ρ, w, cache_propagator; w_bulk, exp_field=nothing, maier_saupe_field=nothing)
 
 WLC analogue of `DiscreteGaussianChainPropagator`'s SCFT `propagate!`: runs
-`_wlc_linear_sweep!` for every chain using shifted fields
+`_wlc_tree_sweep!` for every chain using shifted fields
 `ef(α) = exp(w_bulk[α] - w_α)`.
 
 `maier_saupe_field`, when not `nothing`, is a `Vector` indexed by species — same
@@ -428,14 +499,14 @@ array with a species dimension) — where `maier_saupe_field[α]` has shape
 `(ngrid..., n_orient)`: the orientation-*dependent* mean-field contribution
 `w_MS,α(r,u)` (`compute_maier_saupe_field`, `src/models/SCFT/scft.jl`) that a
 position-only field cannot represent. It multiplies into `ef(α)` as an extra
-`exp(-w_MS,α(r,u))` factor; `_wlc_linear_sweep!` needs no changes at all to consume
+`exp(-w_MS,α(r,u))` factor; `_wlc_tree_sweep!` needs no changes at all to consume
 this — `ef(α)`'s result is already broadcast against `(ngrid...,n_orient)`-shaped
 buffers there regardless of whether `ef(α)` itself is position-only or also carries an
 orientation axis (Julia broadcasting treats a missing trailing dimension as size 1).
 """
 function propagate!(system::SCFTSystem, ρ, w, cache_propagator::NamedTuple;
                     w_bulk, exp_field=nothing, maier_saupe_field=nothing)
-    (; q_in, q_out, buf_r, buf_c, child_buf, qgrid_buf, qlm_buf, scal_buf, P, iP) = cache_propagator
+    (; q_in, q_out) = cache_propagator
     nd = dimension(system)
     FT = eltype(w)
     propagator = system.propagator
@@ -451,7 +522,6 @@ function propagate!(system::SCFTSystem, ρ, w, cache_propagator::NamedTuple;
     qw_host = Array(propagator.sht.quad_weight)
     for c in 1:nchains
         seg_spec = sequence[c]
-        _wlc_linear_sweep!(q_in[c], q_out[c], buf_r, buf_c, child_buf, qgrid_buf, qlm_buf, scal_buf, P, iP,
-                            propagator, seg_spec, ef, nd, qw_host)
+        _wlc_tree_sweep!(q_in[c], q_out[c], cache_propagator, propagator, propagator.trees[c], seg_spec, ef, nd, qw_host)
     end
 end

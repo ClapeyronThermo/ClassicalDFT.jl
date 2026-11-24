@@ -294,6 +294,8 @@ function sample_chain(system::SCFTWLCSystem, ρ, anchor_bead::Int, r0, u0;
     (1 <= anchor_bead <= N) || throw(ArgumentError("anchor_bead=$anchor_bead out of range 1:$N"))
     b_species = segment_lengths(system.model)
     lp_species = persistence_lengths(system.model)
+    any(ch -> length(ch) >= 2, system.propagator.trees[chain].children) && throw(ArgumentError(
+        "sample_chain only supports linear chains; chain $chain is branched."))
     any(α -> !is_oriented(system.model.chains[α]), species) && throw(ArgumentError(
         "sample_chain does not support chains containing GaussianChain beads yet " *
         "(Gaussian bonds have no fixed length or direction to sample)."))

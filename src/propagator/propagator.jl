@@ -46,9 +46,29 @@ struct DiscreteGaussianChainPropagator{K} <: DFTPropagator
 end
 
 """
-    WLCPropagator{S<:SHTPlan,K,B} <: DFTPropagator
+    OrientedTree
 
-Discrete worm-like-chain (bead-rod/Kratky-Porod) propagator for LINEAR chains, tracking
+A chain's bond tree rooted at a chain end (the first node, in node order, with at most
+one bond), as used by [`WLCPropagator`](@ref). Every non-root bead has exactly one parent
+bond, and its propagators are indexed by that bond's direction `u` (parent → bead).
+
+- `order`: nodes in breadth-first order from the root (parents before children).
+- `parent`: parent node of each node (`0` for the root).
+- `children`: child nodes of each node.
+- `qnode`: a leaf other than the root (the root itself for a one-bead molecule), where
+  `Q̃ = (1/V)∫dr∫du q_in` is evaluated.
+"""
+struct OrientedTree
+    order::Vector{Int}
+    parent::Vector{Int}
+    children::Vector{Vector{Int}}
+    qnode::Int
+end
+
+"""
+    WLCPropagator{S<:SHTPlan,K,B,G} <: DFTPropagator
+
+Discrete worm-like-chain (bead-rod/Kratky-Porod) propagator for linear or branched chains, tracking
 bond orientation on S² via a real-spherical-harmonic representation
 (`src/utils/spherical_harmonics.jl`) in addition to position. Each bead step splits into
 a bending half-step (a kernel diagonal in spherical-harmonic degree `l`, applied via
@@ -56,11 +76,12 @@ forward/inverse SHT — the orientation-space analogue of `DiscreteGaussianChain
 being diagonal in Fourier `|k|`) followed by a translation half-step (a fixed-length shift
 along the bond direction, applied as a per-orientation-node complex phase kernel in
 Fourier(r)-space, reusing the same `plan_rfft`/`plan_irfft`/`convolve!` R2C infrastructure
-`DiscreteGaussianChainPropagator` uses). See `_wlc_linear_sweep!`
+`DiscreteGaussianChainPropagator` uses). See `_wlc_tree_sweep!`
 (`src/propagator/wlc.jl`) for the full recursion and the derivation of why bending must
 come *before* translation (the shift applied to build `q_in[k]`/`q_out[k]` depends on
-`k`'s own bond orientation `u`, not the previous node's). Branching is out of scope for
-v1 — this propagator assumes every chain in `species.sequence` is a simple linear chain.
+`k`'s own bond orientation `u`, not the previous node's). Branched chains are swept on
+their bond tree rooted at a chain end; branch points are freely jointed (no bending
+correlation between the bonds that meet there).
 
 # Fields
 - `sht::S`: the shared orientation quadrature grid/SHT operator (one per propagator).
@@ -77,6 +98,8 @@ v1 — this propagator assumes every chain in `species.sequence` is a simple lin
   `rfft_ngrid`, same formula as `DiscreteGaussianChainPropagator`) for every bond that
   touches a [`GaussianChain`](@ref) species. Empty when every species is
   orientation-resolved.
+- `trees::Vector{OrientedTree}`: per chain, the bond tree rooted at a chain end (see
+  [`OrientedTree`](@ref)), which fixes the sweep order and each bead's orientation label.
 
 # Mixed (composite) chains
 A chain may mix orientation-resolved species ([`WormLikeChain`](@ref), [`RigidRod`](@ref))
@@ -96,6 +119,7 @@ struct WLCPropagator{S<:SHTPlan,K,B,G} <: DFTPropagator
     trans_kernel_conj::K
     bend_eig::B
     gauss_kernel::G
+    trees::Vector{OrientedTree}
 end
 
 cache_q_in(cache_propagator::Tuple) = cache_propagator[1]

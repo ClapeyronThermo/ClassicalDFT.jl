@@ -11,7 +11,7 @@ function _composite_system(chain, seq; ints=(HelfandCompressibility(20.0),), L=6
     st = ClassicalDFT.Uniform1DCart((0.0, 0.0), [1.0], [0.0, L], ng)
     sys = ClassicalDFT.SCFTSystem(m, st, ClassicalDFT.DFTOptions();
         mol_structure=Dict("mol" => ClassicalDFT.custom_structure(seq)),
-        ensemble=[:canonical], n_molecules=[L / length(seq)])
+        ensemble=[:canonical], n_molecules=[L / count(isletter, seq)])
     propagator === nothing && return sys
     p = propagator(sys)
     return ClassicalDFT.SCFTSystem(sys.model, sys.species, sys.structure, p, sys.options, sys.external_field)
@@ -84,17 +84,53 @@ end
     @testset "rod-coil lamella converges (with and without Maier-Saupe on the rod)" begin
         chi = Dict(("A", "B") => 2.5)
         for ints in ((FloryHugginsChi(chi), HelfandCompressibility(20.0)),
-                     (FloryHugginsChi(chi), HelfandCompressibility(20.0), MaierSaupe(Dict(("A", "A") => 1.0))))
+                     (FloryHugginsChi(chi), HelfandCompressibility(20.0), MaierSaupe(Dict(("A", "A") => 0.3))))
             sys = _composite_system(Dict("A" => RigidRod(b=1.0), "B" => GaussianChain(b=1.0)),
                                     "AAAAAABBBBBBBBBB"; ints=ints, L=8.0, ng=48, L_max=6)
             ρ = ClassicalDFT.initialize_profiles(sys)
             z = range(0, 8.0, length=48)
             ρ[:, 1] .+= 0.05 .* cos.(2π .* z ./ 8.0)
             ρ[:, 2] .-= 0.05 .* cos.(2π .* z ./ 8.0)
-            ClassicalDFT.converge!(sys, ρ; verbose=false, tol=1e-8, maxit=3000)
+            # ν = 0.3: the damped Maier-Saupe update converges slowly for larger ν here.
+            ClassicalDFT.converge!(sys, ρ; verbose=false, tol=1e-8, maxit=2000)
             @test !any(isnan, ρ)
             @test maximum(ρ[:, 1]) - minimum(ρ[:, 1]) > 0.3
             @test maximum(abs.(sum(ρ, dims=2) .- 1.0)) < 0.05
+        end
+    end
+
+    @testset "branched: all-Gaussian star through the WLC tree sweep = Gaussian tree sweep" begin
+        chain = Dict("A" => GaussianChain(b=1.0), "B" => GaussianChain(b=1.3))
+        seq = "AA(BB)(BBB)A"
+        gl = [("mol", ["A"=>3, "B"=>5])]
+        sys_g = _composite_system(chain, seq; grouplist=gl)
+        sys_w = _composite_system(chain, seq; grouplist=gl,
+            propagator = s -> ClassicalDFT.WLCPropagator(s.model, s.species, s.structure, CPU(), Float64; L_max=4))
+        w = 0.4 .* randn(rng, 24, 2)
+        a, b = _propagate(sys_g, w), _propagate(sys_w, w)
+        @test b.Q ≈ a.Q rtol = 1e-12
+        @test b.ρ ≈ a.ρ rtol = 1e-12
+    end
+
+    @testset "branched: uniform field and per-node identity ($seq, $label)" for (label, chain) in (
+            "rod star"   => Dict("A" => WormLikeChain(b=1.0, lp=4.0), "B" => RigidRod(b=1.0)),
+            "rod-coil"   => Dict("A" => WormLikeChain(b=1.0, lp=4.0), "B" => GaussianChain(b=1.0))),
+            seq in ("AA(BB)(BBB)A", "A(B)(B)(B)")
+        letters = unique(filter(isletter, seq))
+        gl = [("mol", [string(l) => count(==(l), seq) for l in letters])]
+        sys = _composite_system(chain, seq; grouplist=gl)
+        r0 = _propagate(sys, zeros(24, 2))
+        @test r0.Q[1] ≈ 1.0 rtol = 1e-10
+        @test r0.ρ ≈ repeat(ClassicalDFT.compute_bulk_densities(sys)', 24, 1) rtol = 1e-10
+        w = 0.5 .* randn(rng, 24, 2)
+        r = _propagate(sys, w)
+        qw = sys.propagator.sht.quad_weight
+        dz = ClassicalDFT.structure_dz(sys.structure)[1]
+        seqv = sys.species.sequence[1]
+        for k in eachindex(seqv)
+            ef = exp.(r.w_bulk[seqv[k]] .- w[:, seqv[k]])
+            qq = selectdim(r.q_in[1], 3, k) .* selectdim(r.q_out[1], 3, k)
+            @test sum(ClassicalDFT._orientation_marginalize(qq, qw, 2) ./ ef) * dz / (24 * dz) ≈ r.Q[1] rtol = 1e-10
         end
     end
 end

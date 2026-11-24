@@ -405,13 +405,22 @@ end
     # preallocate_propagator -> propagate! -> compute_partition_functions ->
     # compute_densities! -> converge.jl pipeline for `SCFTWormLikeChainFluid`/
     # `WLCPropagator`, which needs a 3D structure (orientation is inherently 3D).
-    @testset "WLC: rejects branched chains" begin
+    @testset "WLC: accepts branched chains (rooted at a chain end)" begin
         model = ClassicalDFT.SCFTWormLikeChainFluid([("rod", ["A"=>4])], [1.0], [3.0], zeros(1,1);
                                                       rho0=1.0, kappa=20.0)
-        structure = ClassicalDFT.Uniform3DCart((0.0, 0.0), [1.0], [-8.0 8.0; -8.0 8.0; -8.0 8.0], (8,8,8))
-        branched = Dict("rod" => ClassicalDFT.custom_structure("A(AA)A"))
-        @test_throws ErrorException ClassicalDFT.SCFTSystem(model, structure, ClassicalDFT.DFTOptions();
-            mol_structure=branched, ensemble=[:canonical], n_molecules=[16.0])
+        structure = ClassicalDFT.Uniform1DCart((0.0, 0.0), [1.0], [0.0, 8.0], 16)
+        # "A(AA)A" is linear written out of order; "AA(A)A" has a degree-3 bead.
+        out_of_order = ClassicalDFT.SCFTSystem(model, structure, ClassicalDFT.DFTOptions();
+            mol_structure=Dict("rod" => ClassicalDFT.custom_structure("A(AA)A")),
+            ensemble=[:canonical], n_molecules=[2.0])
+        @test all(ch -> length(ch) <= 1, out_of_order.propagator.trees[1].children)
+        branched = Dict("rod" => ClassicalDFT.custom_structure("AA(A)A"))
+        system = ClassicalDFT.SCFTSystem(model, structure, ClassicalDFT.DFTOptions();
+            mol_structure=branched, ensemble=[:canonical], n_molecules=[2.0])
+        tree = system.propagator.trees[1]
+        @test length(tree.children[tree.order[1]]) == 1          # root is a chain end
+        @test count(ch -> length(ch) >= 2, tree.children) == 1    # one branch point
+        @test isempty(tree.children[tree.qnode]) && tree.qnode != tree.order[1]
     end
 
     @testset "WLC: uniform melt is a fixed point of converge! (Q~1, F~0)" begin

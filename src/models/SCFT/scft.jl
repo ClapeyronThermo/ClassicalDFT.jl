@@ -214,8 +214,7 @@ function compute_partition_functions(system::SCFTWLCSystem, w, w_bulk, q_in, dz;
 
     Q = Vector{FT}(undef, nmol)
     for c in 1:nmol
-        Nc = length(species.sequence[c])
-        q_end = selectdim(q_in[c], nd + 2, Nc)
+        q_end = selectdim(q_in[c], nd + 2, system.propagator.trees[c].qnode)
         q_marg = _orientation_marginalize(q_end, quad_weight, nd + 1)
         if weights !== nothing
             Q[c] = sum(q_marg .* weights) / V_eff
