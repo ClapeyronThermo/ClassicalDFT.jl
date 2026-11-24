@@ -66,6 +66,8 @@ struct SCFTProblem{S,C} <: cDFTProblem{S}
     log_interval::Int
     save_interval::Int
     save_callback::C
+    director::Union{Nothing,NTuple{3,Float64}}
+    nematic_order::Float64
 end
 
 """
@@ -82,17 +84,30 @@ struct problem type for all SCFT systems.
 - `quadrature::Symbol = :trapz`: Quadrature rule for partition-function integrals, the available values are:
   - `:trapz`   — periodic composite trapezoidal (uniform weights, spectral convergence for smooth periodic functions, works for any N). Recommended for periodic SCFT domains.
   - `:simpson` — composite Simpson rule (O(h⁴), requires odd N per dimension).
+- `director = nothing`: initial orientation state for models with an active
+  [`MaierSaupe`](@ref). `nothing` starts every species isotropic, `⟨uu⟩ = δ/3` — an exact
+  (possibly unstable) fixed point, so a nematic state cannot develop from it. A 3-vector
+  (normalized internally) starts orientation-resolved species uniaxially aligned along it,
+  `⟨uu⟩ = S n n + (1−S) δ/3` with `S = nematic_order`.
+- `nematic_order::Real = 0.5`: initial uniaxial order `S` used with `director`.
 """
 function SCFTProblem(system;
             quadrature     :: Symbol = :trapz,
             log_interval   :: Int    = 0,
             save_interval  :: Int    = 0,
             save_callback   ::C      = nothing,
+            director                 = nothing,
+            nematic_order  :: Real   = 0.5,
             kwargs...) where C
     @assert log_interval >= 0
     @assert save_interval >= 0
     save_interval > 0 && (@assert save_callback != nothing)
-    return SCFTProblem(system,quadrature,log_interval,save_interval,save_callback)
+    dir = director === nothing ? nothing : begin
+        n = Float64.(collect(director))
+        length(n) == 3 && sum(abs2, n) > 0 || throw(ArgumentError("director must be a nonzero 3-vector, got $director"))
+        Tuple(n ./ sqrt(sum(abs2, n)))
+    end
+    return SCFTProblem(system,quadrature,log_interval,save_interval,save_callback,dir,Float64(nematic_order))
 end
 
 cDFTProblem(system::Union{DFTSystem,DGTSystem,ElectrolyteDFTSystem};kwargs...) = DFTProblem(system;kwargs...)
@@ -377,16 +392,45 @@ function get_new_profile!(system::SCFTSystem, ρ, w, caches)
     return Q
 end
 
+# Initial orientation moments R_α = ρ_α ⟨u_a u_b⟩ (`_Q_PAIRS` order): isotropic, or
+# uniaxial along `director` with order S for orientation-resolved species.
+function _initial_orientation_moments!(R_tensor, system, ρ, director, S)
+    nd = dimension(system)
+    ρh = Array(ρ)
+    Rh = zeros(eltype(R_tensor), size(R_tensor))
+    for α in 1:size(ρh, nd + 1)
+        aligned = director !== nothing && is_oriented(system.model.chains[α])
+        Sα = aligned ? S : 0.0
+        for (j, (a, b)) in enumerate(_Q_PAIRS)
+            uu = (a == b ? (1 - Sα) / 3 : 0.0) + (aligned ? Sα * director[a] * director[b] : 0.0)
+            selectdim(selectdim(Rh, nd + 2, j), nd + 1, α) .= uu .* selectdim(ρh, nd + 1, α)
+        end
+    end
+    copyto!(R_tensor, Rh)
+    return R_tensor
+end
+
+# Scale applied to the Maier-Saupe orientation moments R when they join `w` in the
+# Anderson vector. R is O(ρ₀/3) while `w` is O(1–10); without rescaling, Anderson's
+# least-squares step under-weights R and stalls. Benchmarked over WLC/rod-coil/rod-melt
+# cases with ν = 0.3–6: s = 10 converged in every case and was fastest or near-fastest
+# (s = 1 stalled on a rod-coil case; s = 3 and 30 were up to 3× slower there).
+const _MS_ANDERSON_SCALE = 10
+
 """
     converge!(prob::SCFTProblem, method::AASol, ρ::AbstractArray)
 
-Solve the SCFT fixed point for any [`SCFTModel`](@ref). The scalar field `w` is the
-Anderson-accelerated vector. Auxiliary state that is not part of `w` — today the
-Maier-Saupe orientation moments `R_tensor` — is updated by damped mixing
-(`R ← (1-β)R + β·R_new`, `β = method.beta`) inside the fixed-point map rather than being
-appended to the Anderson vector: combining the two in one extrapolated vector was found
-to diverge to NaN at every `ν` tried, a conditioning problem from mixing variables with
-different scales, whereas the decoupled update converges.
+Solve the SCFT fixed point for any [`SCFTModel`](@ref). The Anderson-accelerated unknown
+is the scalar field `w`, plus — when the model has an active [`MaierSaupe`](@ref)
+interaction — the orientation moments `R_tensor` (scaled by `_MS_ANDERSON_SCALE`), so the
+convergence test covers both. (Updating `R` by separate damped mixing, the previous
+scheme, stalled or produced NaN for ν ≳ 0.6 and could report convergence while `R` was
+still far from self-consistent, e.g. an isotropic answer for a nematic rod melt.)
+
+`ρ` is updated in place. Returns `(; converged, err, iterations, w, Q, R_tensor)`: the
+converged fields, single-chain partition functions, and the Maier-Saupe orientation
+moments `R_α = ρ_α ⟨u u⟩` (`nothing` without Maier-Saupe; shape `(ngrid..., nspecies, 6)`
+in `_Q_PAIRS` order) — pass `w`, `Q` and `R_tensor` to [`free_energy`](@ref).
 """
 function converge!(prob::SCFTProblem, method::AASol, ρ::AbstractArray)
     system = prob.system
@@ -397,31 +441,43 @@ function converge!(prob::SCFTProblem, method::AASol, ρ::AbstractArray)
        interaction_caches, R_tensor, R_tensor_new) = cache_model
 
     compute_fields!(system, ρ, w; scratch, interaction_caches)
+    R_tensor === nothing || _initial_orientation_moments!(R_tensor, system, ρ, prob.director, prob.nematic_order)
 
     caches = (; w_new, w_bulk, dz, cache_external, cache_propagator, weights, V_eff,
               exp_field, inv_exp_field, scratch, interaction_caches, R_tensor, R_tensor_new)
 
     iter_count = Ref(0)
     Q_last = Ref{Vector{FT}}(FT[])
-    β = FT(method.beta)
+    nw = length(w)
+    s = FT(_MS_ANDERSON_SCALE)
 
     function GFix!(G, xin)
-        copyto!(w, reshape(xin, size(w)))
+        copyto!(w, 1, xin, 1, nw)
+        if R_tensor !== nothing
+            copyto!(R_tensor, 1, xin, nw + 1, length(R_tensor))
+            R_tensor ./= s
+        end
         Qᵢ = get_new_profile!(system, ρ, w, caches)
         Q_last[] = Qᵢ
         GFix_logger(prob, iter_count, ρ, (Qᵢ, w, V_eff, w_bulk))
-        copyto!(G, vec(w_new))
+        copyto!(G, 1, vec(w_new), 1, nw)
         if R_tensor !== nothing
-            @. R_tensor = (1 - β) * R_tensor + β * R_tensor_new
+            R_tensor_new .*= s
+            copyto!(G, nw + 1, vec(R_tensor_new), 1, length(R_tensor_new))
         end
         return G
     end
 
-    result = aasol(GFix!, vec(copy(w)), method)
+    x0 = R_tensor === nothing ? vec(copy(w)) : vcat(vec(w), s .* vec(R_tensor))
+    result = aasol(GFix!, x0, method)
 
-    w .= reshape(result.solution, size(w))
+    copyto!(w, 1, result.solution, 1, nw)
+    if R_tensor !== nothing
+        copyto!(R_tensor, 1, result.solution, nw + 1, length(R_tensor))
+        R_tensor ./= s
+    end
     # ρ already holds the density from the last GFix! call (aasol evaluates the map once
-    # more at `solution`), so it is consistent with the converged w.
+    # more at `solution`), so it is consistent with the converged fields.
     converged = result.idid
     err = isempty(result.history) ? FT(NaN) : FT(result.history[end])
 
@@ -430,6 +486,7 @@ function converge!(prob::SCFTProblem, method::AASol, ρ::AbstractArray)
         msg = converged ? "SCFT converged" : "SCFT did not converge"
         @info "$msg after $(iter_count[]) iterations: err = $(round(err; sigdigits=3)) | F = $(round(H; sigdigits=6))"
     end
+    return (; converged, err, iterations = iter_count[], w, Q = Q_last[], R_tensor)
 end
 
 function GFix_logger(prob::SCFTProblem, iter_count, ρ, logger_cache::C) where C

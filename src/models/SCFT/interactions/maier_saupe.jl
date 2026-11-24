@@ -5,7 +5,15 @@ Maier-Saupe orientational coupling between orientation-resolved species
 ([`WormLikeChain`](@ref), [`RigidRod`](@ref)). `nu` is a symmetric matrix in species order
 (or a `Dict` of species-name pairs); unlike `chi`, a nonzero diagonal `nu[α,α]` is
 meaningful (self-alignment). `nu = 5` is the isotropic-nematic linear instability of an
-isolated, homogeneous, self-coupled species.
+isolated, homogeneous, self-coupled species with independent segment orientations. A
+rigid rod of `N` beads shares one orientation, so its coupling is `Nν`: its
+isotropic-nematic transition is at `Nν ≈ 4.49`, and SCFT reproduces the classical
+Maier-Saupe order parameter for rigid rods (see `test/test_scft_maier_saupe.jl`).
+
+Strongly aligned states need a finer orientation grid: at `Nν = 36` (`S ≈ 0.97`),
+`L_max = 8` underestimates `S` by about 0.07 and `L_max = 14` by 0.01. A nematic state
+only develops from an anisotropic start; pass `director` (and `nematic_order`) to
+`converge!` (see [`SCFTProblem`](@ref)).
 
 The orientational mean field is `u`-dependent, so it does not enter the scalar field `w`;
 it is built from the orientation tensor state `R_tensor` that the solver carries

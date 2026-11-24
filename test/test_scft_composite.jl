@@ -84,14 +84,13 @@ end
     @testset "rod-coil lamella converges (with and without Maier-Saupe on the rod)" begin
         chi = Dict(("A", "B") => 2.5)
         for ints in ((FloryHugginsChi(chi), HelfandCompressibility(20.0)),
-                     (FloryHugginsChi(chi), HelfandCompressibility(20.0), MaierSaupe(Dict(("A", "A") => 0.3))))
+                     (FloryHugginsChi(chi), HelfandCompressibility(20.0), MaierSaupe(Dict(("A", "A") => 1.0))))
             sys = _composite_system(Dict("A" => RigidRod(b=1.0), "B" => GaussianChain(b=1.0)),
                                     "AAAAAABBBBBBBBBB"; ints=ints, L=8.0, ng=48, L_max=6)
             ρ = ClassicalDFT.initialize_profiles(sys)
             z = range(0, 8.0, length=48)
             ρ[:, 1] .+= 0.05 .* cos.(2π .* z ./ 8.0)
             ρ[:, 2] .-= 0.05 .* cos.(2π .* z ./ 8.0)
-            # ν = 0.3: the damped Maier-Saupe update converges slowly for larger ν here.
             ClassicalDFT.converge!(sys, ρ; verbose=false, tol=1e-8, maxit=2000)
             @test !any(isnan, ρ)
             @test maximum(ρ[:, 1]) - minimum(ρ[:, 1]) > 0.3
