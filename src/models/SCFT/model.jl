@@ -85,8 +85,8 @@ nspecies(model::SCFTModel) = length(model.groups.flattenedgroups)
 """Per-species segment/bond length `b`, in species order."""
 segment_lengths(model::SCFTModel) = Float64[segment_length(c) for c in model.chains]
 
-"""Per-species persistence length `lp` (orientation-resolved species only; `Inf` for rods)."""
-persistence_lengths(model::SCFTModel) = Float64[persistence_length(c) for c in model.chains]
+"""Per-species persistence length `lp` (`Inf` for rods, `NaN` for Gaussian species, which have none)."""
+persistence_lengths(model::SCFTModel) = Float64[is_oriented(c) ? persistence_length(c) : NaN for c in model.chains]
 
 """Whether any species is orientation-resolved (needs the WLC orientation grid)."""
 has_orientation(model::SCFTModel) = any(is_oriented, model.chains)
@@ -348,15 +348,13 @@ function get_propagator(model::SCFTModel, species::SCFTSpecies, structure::DFTSt
                         backend::Backend, ::Type{FP}=Float64) where FP<:AbstractFloat
     used = unique(reduce(vcat, species.sequence))
     oriented = [is_oriented(model.chains[α]) for α in used]
+    # All-Gaussian systems use the cheaper orientation-free propagator; any
+    # orientation-resolved species needs the orientation grid, and WLCPropagator handles
+    # Gaussian beads in the same chain through Gaussian bonds (see its docstring).
     if !any(oriented)
         return DiscreteGaussianChainPropagator(model, species, structure, backend, FP)
-    elseif all(oriented)
-        return WLCPropagator(model, species, structure, backend, FP; L_max=model.L_max)
     else
-        names = species_names(model)
-        desc = join(("$(names[α]): $(chain_label(model.chains[α]))" for α in used), ", ")
-        error("Mixing Gaussian and orientation-resolved species in one system ($desc) " *
-              "needs the composite chain propagator, which is not implemented yet.")
+        return WLCPropagator(model, species, structure, backend, FP; L_max=model.L_max)
     end
 end
 

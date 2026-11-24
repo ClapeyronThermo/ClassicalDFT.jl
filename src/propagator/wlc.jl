@@ -98,7 +98,8 @@ function WLCPropagator(
     end
 
     b_species = segment_lengths(model)
-    lp_species = persistence_lengths(model)
+    lp_species = persistence_lengths(model)   # NaN for Gaussian species (never used for them)
+    oriented = [is_oriented(c) for c in model.chains]
 
     bond_pairs = Set{Tuple{Int,Int}}()
     for c in 1:nchains
@@ -116,8 +117,19 @@ function WLCPropagator(
     trans_kernel = Dict{Tuple{Int,Int}, Array{CT}}()
     trans_kernel_conj = Dict{Tuple{Int,Int}, Array{CT}}()
     bend_eig = Dict{Tuple{Int,Int}, Vector{FP}}()
+    gauss_kernel = Dict{Tuple{Int,Int}, Array{CT}}()
+    ν_sq = zeros(FP, rfft_ngrid...)
+    for i in 1:nd
+        ν_sq .+= ν[i] .^ 2
+    end
 
     for (α, β) in bond_pairs
+        if !(oriented[α] && oriented[β])
+            # Gaussian bond (touches a Gaussian bead): same kernel as DiscreteGaussianChainPropagator.
+            b_g = α == β ? FP(b_species[α]) : sqrt(FP(b_species[α]^2 + b_species[β]^2) / 2)
+            gauss_kernel[(α, β)] = CT.(exp.(-2 * FP(pi)^2 * b_g^2 .* ν_sq ./ 3))
+            continue
+        end
         if α == β
             b_bond = FP(b_species[α])
             κ_bond = FP(lp_species[α] / b_species[α])
@@ -164,10 +176,15 @@ function WLCPropagator(
     for (key, k) in bend_eig
         device_bend_eig[key] = Adapt.adapt(device, k)
     end
+    GT = typeof(Adapt.adapt(device, zeros(CT, rfft_ngrid...)))
+    device_gauss_kernel = Dict{Tuple{Int,Int}, GT}()
+    for (key, k) in gauss_kernel
+        device_gauss_kernel[key] = Adapt.adapt(device, k)
+    end
 
     sht = Adapt.adapt(device, sht)
 
-    return WLCPropagator(sht, device_trans_kernel, device_trans_kernel_conj, device_bend_eig)
+    return WLCPropagator(sht, device_trans_kernel, device_trans_kernel_conj, device_bend_eig, device_gauss_kernel)
 end
 
 function preallocate_propagator(system, propagator::WLCPropagator, ρ, backend::Backend)
@@ -191,6 +208,7 @@ function preallocate_propagator(system, propagator::WLCPropagator, ρ, backend::
     child_buf = allocate(backend, FP, ngrid..., n_orient)
     qgrid_buf = allocate(backend, FP, ngrid..., n_orient)
     qlm_buf = allocate(backend, FP, ngrid..., nlm)
+    scal_buf = allocate(backend, FP, ngrid...)      # orientation-free message across Gaussian bonds
 
     if backend isa CPU
         P  = plan_rfft(buf_r,  1:nd; num_threads=Threads.nthreads())
@@ -200,7 +218,7 @@ function preallocate_propagator(system, propagator::WLCPropagator, ρ, backend::
         iP = plan_irfft(buf_c, ngrid[1], 1:nd)
     end
 
-    return (; q_in, q_out, buf_r, buf_c, child_buf, qgrid_buf, qlm_buf, P, iP)
+    return (; q_in, q_out, buf_r, buf_c, child_buf, qgrid_buf, qlm_buf, scal_buf, P, iP)
 end
 
 """
@@ -239,8 +257,22 @@ function wlc_bend!(dest, src, eig_lm, sht, qlm_buf, nd)
 end
 
 """
-    _wlc_linear_sweep!(q_in_c, q_out_c, buf_r, buf_c, child_buf, qgrid_buf, qlm_buf, P, iP,
-                        propagator, seg_spec, ef, nd)
+    _orientation_integral!(out, q, quad_weight, nd)
+
+Allocation-free `out(r) = Σ_i quad_weight[i] q(r, u_i)` (≈ `∫du q(r,u)`) for `q` of shape
+`(ngrid..., n_orient)`. `quad_weight` must be a host vector (it is indexed per node).
+"""
+function _orientation_integral!(out, q, quad_weight::Vector, nd)
+    out .= zero(eltype(out))
+    for i in eachindex(quad_weight)
+        out .+= quad_weight[i] .* selectdim(q, nd + 1, i)
+    end
+    return out
+end
+
+"""
+    _wlc_linear_sweep!(q_in_c, q_out_c, buf_r, buf_c, child_buf, qgrid_buf, qlm_buf, scal_buf, P, iP,
+                        propagator, seg_spec, ef, nd, quad_weight)
 
 Bottom-up (`q_in`)/top-down (`q_out`) discrete worm-like-chain sweep for one LINEAR chain
 (node order == chain-position order). `q_in_c`/`q_out_c` have shape
@@ -310,16 +342,25 @@ Each of `q_in[k]`/`q_out[k]` carries exactly one factor of `ef(α(k))` — the s
 double-counting convention `_dgc_tree_sweep!` uses, corrected downstream via
 `exp(Δw_α)` in `compute_densities!`.
 """
-function _wlc_linear_sweep!(q_in_c, q_out_c, buf_r, buf_c, child_buf, qgrid_buf, qlm_buf, P, iP,
-                             propagator, seg_spec, ef, nd)
+function _wlc_linear_sweep!(q_in_c, q_out_c, buf_r, buf_c, child_buf, qgrid_buf, qlm_buf, scal_buf, P, iP,
+                             propagator, seg_spec, ef, nd, quad_weight)
     Nc = length(seg_spec)
     sht = propagator.sht
     FT = eltype(q_in_c)
+    four_pi = 4 * FT(pi)
+    gauss = propagator.gauss_kernel
 
-    selectdim(q_in_c, nd + 2, 1) .= ef(seg_spec[1]) ./ (4 * FT(pi))
+    selectdim(q_in_c, nd + 2, 1) .= ef(seg_spec[1]) ./ four_pi
     for k in 2:Nc
         bond_key = minmax(seg_spec[k-1], seg_spec[k])
         prev = selectdim(q_in_c, nd + 2, k - 1)
+        if haskey(gauss, bond_key)
+            # Gaussian bond: ∫du q_in[k-1], Gaussian convolution, isotropic re-seed.
+            _orientation_integral!(scal_buf, prev, quad_weight, nd)
+            convolve!(scal_buf, scal_buf, gauss[bond_key], P, iP, buf_r, buf_c)
+            selectdim(q_in_c, nd + 2, k) .= ef(seg_spec[k]) .* scal_buf ./ four_pi
+            continue
+        end
         wlc_bend!(child_buf, prev, propagator.bend_eig[bond_key], sht, qlm_buf, nd)
         wlc_translate!(qgrid_buf, child_buf, propagator.trans_kernel[bond_key], buf_r, buf_c, P, iP, nd)
         selectdim(q_in_c, nd + 2, k) .= ef(seg_spec[k]) .* qgrid_buf
@@ -329,6 +370,14 @@ function _wlc_linear_sweep!(q_in_c, q_out_c, buf_r, buf_c, child_buf, qgrid_buf,
     for k in (Nc-1):-1:1
         bond_key = minmax(seg_spec[k], seg_spec[k+1])
         nxt = selectdim(q_out_c, nd + 2, k + 1)
+        if haskey(gauss, bond_key)
+            # Gaussian bond: orientation average of q_out[k+1], Gaussian convolution.
+            _orientation_integral!(scal_buf, nxt, quad_weight, nd)
+            scal_buf ./= four_pi
+            convolve!(scal_buf, scal_buf, gauss[bond_key], P, iP, buf_r, buf_c)
+            selectdim(q_out_c, nd + 2, k) .= ef(seg_spec[k]) .* scal_buf
+            continue
+        end
         wlc_translate!(child_buf, nxt, propagator.trans_kernel_conj[bond_key], buf_r, buf_c, P, iP, nd)
         wlc_bend!(qgrid_buf, child_buf, propagator.bend_eig[bond_key], sht, qlm_buf, nd)
         selectdim(q_out_c, nd + 2, k) .= ef(seg_spec[k]) .* qgrid_buf
@@ -337,18 +386,19 @@ function _wlc_linear_sweep!(q_in_c, q_out_c, buf_r, buf_c, child_buf, qgrid_buf,
 end
 
 function propagate!(system, propagator::WLCPropagator, ρ, δfδρ_res, q_in, q_out, buf_r, buf_c,
-                     child_buf, qgrid_buf, qlm_buf, P, iP)
+                     child_buf, qgrid_buf, qlm_buf, scal_buf, P, iP)
     nd = dimension(system)
     species = system.species
     sequence = species.sequence
     nchains = length(sequence)
 
     ef(α) = exp.(.-selectdim(δfδρ_res, nd + 1, α))
+    qw_host = Array(propagator.sht.quad_weight)
 
     for c in 1:nchains
         seg_spec = sequence[c]
-        _wlc_linear_sweep!(q_in[c], q_out[c], buf_r, buf_c, child_buf, qgrid_buf, qlm_buf, P, iP,
-                            propagator, seg_spec, ef, nd)
+        _wlc_linear_sweep!(q_in[c], q_out[c], buf_r, buf_c, child_buf, qgrid_buf, qlm_buf, scal_buf, P, iP,
+                            propagator, seg_spec, ef, nd, qw_host)
 
         unique_species = unique(seg_spec)
         quad_weight = propagator.sht.quad_weight
@@ -385,7 +435,7 @@ orientation axis (Julia broadcasting treats a missing trailing dimension as size
 """
 function propagate!(system::SCFTSystem, ρ, w, cache_propagator::NamedTuple;
                     w_bulk, exp_field=nothing, maier_saupe_field=nothing)
-    (; q_in, q_out, buf_r, buf_c, child_buf, qgrid_buf, qlm_buf, P, iP) = cache_propagator
+    (; q_in, q_out, buf_r, buf_c, child_buf, qgrid_buf, qlm_buf, scal_buf, P, iP) = cache_propagator
     nd = dimension(system)
     FT = eltype(w)
     propagator = system.propagator
@@ -398,9 +448,10 @@ function propagate!(system::SCFTSystem, ρ, w, cache_propagator::NamedTuple;
     ef(α) = maier_saupe_field === nothing ? base_ef(α) :
                 base_ef(α) .* exp.(.-maier_saupe_field[α])
 
+    qw_host = Array(propagator.sht.quad_weight)
     for c in 1:nchains
         seg_spec = sequence[c]
-        _wlc_linear_sweep!(q_in[c], q_out[c], buf_r, buf_c, child_buf, qgrid_buf, qlm_buf, P, iP,
-                            propagator, seg_spec, ef, nd)
+        _wlc_linear_sweep!(q_in[c], q_out[c], buf_r, buf_c, child_buf, qgrid_buf, qlm_buf, scal_buf, P, iP,
+                            propagator, seg_spec, ef, nd, qw_host)
     end
 end

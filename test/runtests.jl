@@ -12,6 +12,7 @@ using ChemicalIdentifiers
     include("test_scft_regression.jl")
     include("test_scft_model.jl")
     include("test_scft_interactions.jl")
+    include("test_scft_composite.jl")
     include("test_wlc.jl")
     include("test_wlc_gpu.jl")
     include("test_methods.jl")

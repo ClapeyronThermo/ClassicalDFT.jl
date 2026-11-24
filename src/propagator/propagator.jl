@@ -73,12 +73,29 @@ v1 — this propagator assumes every chain in `species.sequence` is a simple lin
   from `bending_eigenvalues(κ_bond, L_max)` (indexed by degree `l`) out to a length-`nlm`
   vector matching `sht`'s per-coefficient layout (`expand_eig_to_lm`), so the bending
   step is a single broadcast multiply.
+- `gauss_kernel::G`: per-bonded-species-pair Gaussian bond kernel (R2C shape
+  `rfft_ngrid`, same formula as `DiscreteGaussianChainPropagator`) for every bond that
+  touches a [`GaussianChain`](@ref) species. Empty when every species is
+  orientation-resolved.
+
+# Mixed (composite) chains
+A chain may mix orientation-resolved species ([`WormLikeChain`](@ref), [`RigidRod`](@ref))
+with [`GaussianChain`](@ref) species, e.g. a rod-coil block copolymer. A bond is a **rod
+bond** (bending + fixed-length translation) only when *both* of its beads are
+orientation-resolved; any bond touching a Gaussian bead is a **Gaussian bond** with
+`b_bond = √((b_α² + b_β²)/2)`. Every node keeps the orientation-resolved storage layout:
+a Gaussian node's propagator is constant in `u`, normalized like a chain start
+(`q_in` carries the isotropic `1/4π`, `q_out` does not), so the density, partition-function
+and orientation-moment kernels apply unchanged. An orientation-resolved bead entered
+through a Gaussian bond starts with an isotropic orientation, exactly like the first bead
+of a chain. All-orientation-resolved chains take exactly the pure-WLC code path.
 """
-struct WLCPropagator{S<:SHTPlan,K,B} <: DFTPropagator
+struct WLCPropagator{S<:SHTPlan,K,B,G} <: DFTPropagator
     sht::S
     trans_kernel::K
     trans_kernel_conj::K
     bend_eig::B
+    gauss_kernel::G
 end
 
 cache_q_in(cache_propagator::Tuple) = cache_propagator[1]

@@ -85,13 +85,16 @@ using Test, ClassicalDFT, Clapeyron
         @test ρa ≈ ρb rtol = 1e-8
     end
 
-    @testset "mixed Gaussian/orientation chains need the composite propagator" begin
+    @testset "mixed Gaussian/orientation chains get the composite WLC propagator" begin
         m = SCFTModel([("rc", ["A"=>3, "B"=>3])]; rho0=1.0,
                       chain=Dict("A"=>RigidRod(), "B"=>GaussianChain()),
-                      interactions=(HelfandCompressibility(20.0),))
+                      interactions=(HelfandCompressibility(20.0),), L_max=4)
         st = ClassicalDFT.Uniform1DCart((0.0, 0.0), [1.0], [0.0, 6.0], 16)
-        @test_throws ErrorException ClassicalDFT.SCFTSystem(m, st, ClassicalDFT.DFTOptions();
+        sys = ClassicalDFT.SCFTSystem(m, st, ClassicalDFT.DFTOptions();
             mol_structure=Dict("rc" => ClassicalDFT.custom_structure("AAABBB")),
             ensemble=[:canonical], n_molecules=[1.0])
+        @test sys.propagator isa ClassicalDFT.WLCPropagator
+        @test sort(collect(keys(sys.propagator.gauss_kernel))) == [(1, 2), (2, 2)]
+        @test collect(keys(sys.propagator.bend_eig)) == [(1, 1)]
     end
 end
