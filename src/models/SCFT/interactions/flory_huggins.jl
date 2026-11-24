@@ -18,7 +18,8 @@ end
 bind_interaction(int::FloryHugginsChi, species::Vector{String}) =
     FloryHugginsChi(_species_matrix(int.chi, species, "FloryHugginsChi chi"; zero_diagonal=true))
 
-function add_field!(w, int::FloryHugginsChi, ρ, ρ_total, rho0, nd)
+function add_field!(w, int::FloryHugginsChi, ρ, ctx)
+    (; rho0, nd) = ctx
     FT = eltype(w)
     chi = int.chi
     n = size(chi, 1)
@@ -42,7 +43,8 @@ function bulk_f(int::FloryHugginsChi, ρ::AbstractVector, rho0)
     return f / (2 * rho0)
 end
 
-function field_energy(int::FloryHugginsChi, ρ, ρ_total, rho0, nd, per_∫, aux)
+function field_energy(int::FloryHugginsChi, ρ, ρ_total, ctx)
+    (; rho0, nd, per_∫) = ctx
     chi = int.chi
     n = size(chi, 1)
     integrand = zero(ρ_total)

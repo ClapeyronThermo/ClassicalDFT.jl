@@ -25,21 +25,30 @@ Interface (units of `k_BT`; `ρ` indexed by species, `rho0` the reference densit
   chain representations (default: no-op).
 - `bulk_f(int, ρ::AbstractVector, rho0)` → isotropic bulk free-energy density. Must be
   generic in `eltype(ρ)` (it is differentiated by `bulk_fields`/`a_res`).
-- `add_field!(w, int, ρ, ρ_total, rho0, nd)` → adds this interaction's scalar mean field
-  `δU/δρ_α` into every species slice `selectdim(w, nd+1, α)` (default: no-op).
-- `field_energy(int, ρ, ρ_total, rho0, nd, per_∫, aux)` → this interaction's contribution
-  to the SCFT free energy *beyond* the generic `-Σ_α ∫ w_α ρ_α` term (for an interaction
-  whose field is part of `w`, that is just its energy `U`). `ρ`/`ρ_total` are host arrays,
-  `per_∫` the periodic quadrature, `aux` a NamedTuple of auxiliary solver state
-  (e.g. `R_tensor`).
+- `preallocate_interaction(int, system, ρ)` → buffers/FFT plans this interaction reuses
+  every iteration, passed back as `ctx.cache` (default: `nothing`).
+- `add_field!(w, int, ρ, ctx)` → adds this interaction's scalar mean field `δU/δρ_α` into
+  every species slice `selectdim(w, nd+1, α)` (default: no-op). `ctx` is a NamedTuple
+  `(; ρ_total, rho0, nd, cache, w_current)`; `w_current` is the field the densities were
+  computed from (`nothing` when there is none, e.g. the initial field).
+- `is_constraint(int)` → `true` for interactions whose field is defined relative to all the
+  others (e.g. [`Incompressible`](@ref)); they are applied after every other interaction
+  (default: `false`).
+- `field_energy(int, ρ, ρ_total, ctx)` → this interaction's contribution to the SCFT free
+  energy *beyond* the generic `-Σ_α ∫ w_α ρ_α` term (for an interaction whose field is
+  part of `w`, that is just its energy `U`). `ρ`/`ρ_total` are host arrays; `ctx` is
+  `(; rho0, nd, per_∫, structure, R_tensor)` with `per_∫` the periodic quadrature and
+  `R_tensor` the Maier-Saupe orientation state (`nothing` without Maier-Saupe).
 """
 abstract type SCFTInteractionModel end
 
 bind_interaction(int::SCFTInteractionModel, ::Vector{String}) = int
 validate_interaction(::SCFTInteractionModel, model) = nothing
-add_field!(w, ::SCFTInteractionModel, ρ, ρ_total, rho0, nd) = w
+add_field!(w, ::SCFTInteractionModel, ρ, ctx) = w
+preallocate_interaction(::SCFTInteractionModel, system, ρ) = nothing
+is_constraint(::SCFTInteractionModel) = false
 bulk_f(::SCFTInteractionModel, ρ::AbstractVector, rho0) = zero(eltype(ρ))
-field_energy(::SCFTInteractionModel, ρ, ρ_total, rho0, nd, per_∫, aux) = 0.0
+field_energy(::SCFTInteractionModel, ρ, ρ_total, ctx) = 0.0
 
 """
     _species_matrix(x, species, name; zero_diagonal=false)
@@ -81,5 +90,8 @@ function _total_density!(out, ρ, nspecies, nd)
 end
 
 include("flory_huggins.jl")
+include("smeared_flory_huggins.jl")
 include("helfand.jl")
+include("edwards.jl")
+include("incompressible.jl")
 include("maier_saupe.jl")

@@ -15,7 +15,8 @@ struct HelfandCompressibility <: SCFTInteractionModel
 end
 HelfandCompressibility(kappa::Real) = HelfandCompressibility(Float64(kappa))
 
-function add_field!(w, int::HelfandCompressibility, ρ, ρ_total, rho0, nd)
+function add_field!(w, int::HelfandCompressibility, ρ, ctx)
+    (; ρ_total, rho0, nd) = ctx
     FT = eltype(w)
     a = FT(int.kappa / rho0)
     inv_rho0 = FT(1 / rho0)
@@ -29,7 +30,9 @@ end
 bulk_f(int::HelfandCompressibility, ρ::AbstractVector, rho0) =
     (int.kappa / (2 * rho0^2)) * (sum(ρ) - rho0)^2
 
-field_energy(int::HelfandCompressibility, ρ, ρ_total, rho0, nd, per_∫, aux) =
-    per_∫((int.kappa / 2) .* (ρ_total ./ rho0 .- 1) .^ 2)
+function field_energy(int::HelfandCompressibility, ρ, ρ_total, ctx)
+    (; per_∫, rho0) = ctx
+    return per_∫((int.kappa / 2) .* (ρ_total ./ rho0 .- 1) .^ 2)
+end
 
 export HelfandCompressibility

@@ -34,8 +34,9 @@ end
 
 has_maier_saupe(int::MaierSaupe) = any(!iszero, int.nu)
 
-function field_energy(int::MaierSaupe, ρ, ρ_total, rho0, nd, per_∫, aux)
-    R_tensor = get(aux, :R_tensor, nothing)
+function field_energy(int::MaierSaupe, ρ, ρ_total, ctx)
+    (; rho0, nd, per_∫) = ctx
+    R_tensor = get(ctx, :R_tensor, nothing)
     R_tensor === nothing && return 0.0
     nu = int.nu
     n = size(nu, 1)

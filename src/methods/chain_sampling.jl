@@ -127,6 +127,11 @@ function compute_propagator_fields(system::SCFTSystem, ρ)
             "the converged q_in/q_out there depend on the R_tensor state converge! tracks " *
             "across iterations, which isn't recoverable from ρ alone."))
     end
+    if get_interaction(system.model, Incompressible) !== nothing
+        throw(ArgumentError(
+            "compute_propagator_fields does not support Incompressible models -- the pressure " *
+            "field ξ(r) is reconstructed from the solver's current w, not from ρ alone."))
+    end
     w = zero(ρ)
     w_bulk = compute_bulk_fields(system.model, compute_bulk_densities(system))
     compute_fields!(system, ρ, w)

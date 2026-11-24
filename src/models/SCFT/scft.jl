@@ -2,7 +2,7 @@ include("model.jl")
 include("legacy.jl")
 
 """
-    compute_fields!(system::SCFTSystem, ρ, w; scratch=nothing)
+    compute_fields!(system::SCFTSystem, ρ, w; scratch=nothing, interaction_caches=nothing, w_current=nothing)
 
 Compute the scalar mean fields `w` from the density profiles `ρ` as the sum of every
 interaction's field (`add_field!`, see [`SCFTInteractionModel`](@ref)), e.g. for
@@ -11,19 +11,39 @@ interaction's field (`add_field!`, see [`SCFTInteractionModel`](@ref)), e.g. for
  w_α(r) = Σ_β (χ_αβ / ρ₀) ρ_β(r) + (κ / ρ₀)(ρ₊(r) / ρ₀ - 1)
 ```
 where `ρ₊ = Σ_α ρ_α`. Orientation-dependent fields (Maier-Saupe) are not part of `w`.
-`scratch`, when given, is a preallocated single-species-shaped buffer for `ρ₊`.
+`scratch`, when given, is a preallocated single-species-shaped buffer for `ρ₊`;
+`interaction_caches` the result of [`preallocate_interactions`](@ref) (allocated on the fly
+when omitted); `w_current` the field `ρ` was computed from, needed by constraint
+interactions such as [`Incompressible`](@ref).
 """
-function compute_fields!(system::SCFTSystem, ρ, w; scratch=nothing)
+function compute_fields!(system::SCFTSystem, ρ, w; scratch=nothing,
+                         interaction_caches=nothing, w_current=nothing)
     model = system.model
     nd = dimension(system)
     ρ_total = scratch !== nothing ? scratch : similar(selectdim(w, nd+1, 1))
     _total_density!(ρ_total, ρ, nspecies(model), nd)
+    caches = interaction_caches !== nothing ? interaction_caches :
+             preallocate_interactions(system, ρ)
     w .= zero(eltype(w))
-    for int in model.interactions
-        add_field!(w, int, ρ, ρ_total, model.rho0, nd)
+    ints = model.interactions
+    # Ordinary interactions first, then constraints (whose field is defined relative
+    # to the sum of all the others).
+    for pass_constraints in (false, true), i in eachindex(ints)
+        is_constraint(ints[i]) == pass_constraints || continue
+        ctx = (; ρ_total, rho0 = model.rho0, nd, cache = caches[i], w_current)
+        add_field!(w, ints[i], ρ, ctx)
     end
     return w
 end
+
+"""
+    preallocate_interactions(system::SCFTSystem, ρ)
+
+One `preallocate_interaction` result per entry of `system.model.interactions` (a Tuple,
+same order).
+"""
+preallocate_interactions(system::SCFTSystem, ρ) =
+    map(int -> preallocate_interaction(int, system, ρ), system.model.interactions)
 
 """
     compute_bulk_densities(system::SCFTSystem)
@@ -647,10 +667,10 @@ function free_energy(system::SCFTSystem, ρ, w, Q;
 
     # Interaction energies beyond the generic -Σ∫wρ term (see SCFTInteractionModel):
     # U for every scalar-field interaction, -U_MS for Maier-Saupe.
-    aux = (; R_tensor)
+    ctx = (; rho0 = model.rho0, nd, per_∫, structure = system.structure, R_tensor)
     U = 0.0
     for int in model.interactions
-        U += field_energy(int, ρ_host, ρ_total, model.rho0, nd, per_∫, aux)
+        U += field_energy(int, ρ_host, ρ_total, ctx)
     end
 
     # -Σ_K ∫ w_K ρ_K dr

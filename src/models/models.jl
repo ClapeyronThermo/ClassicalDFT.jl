@@ -333,8 +333,9 @@ function _preallocate_model_scft_common(system::SCFTSystem, ρ; quadrature::Symb
     scratch       = similar(selectdim(w_new, nd+1, 1))
     exp_field     = [similar(selectdim(w_new, nd+1, 1)) for _ in 1:nspecies]
     inv_exp_field = [similar(selectdim(w_new, nd+1, 1)) for _ in 1:nspecies]
+    interaction_caches = preallocate_interactions(system, w_new)
 
-    return (; w_new, weights, V_eff, w_bulk, scratch, exp_field, inv_exp_field)
+    return (; w_new, weights, V_eff, w_bulk, scratch, exp_field, inv_exp_field, interaction_caches)
 end
 
 function preallocate_model(system::SCFTSystem, ρ; quadrature::Symbol=:trapz)

@@ -337,14 +337,14 @@ interaction, the current orientation-moment state `caches.R_tensor`):
 
 `caches` holds buffers preallocated once outside the loop: `w_new, w_bulk, dz,
 cache_external, cache_propagator, weights, V_eff, exp_field, inv_exp_field, scratch,
-R_tensor, R_tensor_new`. `cache_propagator` is opaque (its shape depends on the
+interaction_caches, R_tensor, R_tensor_new`. `cache_propagator` is opaque (its shape depends on the
 propagator); `q_in`/`q_out` are read from it via `cache_q_in`/`cache_q_out`.
 
 Returns `Q` (one partition function per molecule type).
 """
 function get_new_profile!(system::SCFTSystem, ρ, w, caches)
     (; w_new, w_bulk, dz, cache_external, cache_propagator, weights, V_eff,
-       exp_field, inv_exp_field, scratch, R_tensor, R_tensor_new) = caches
+       exp_field, inv_exp_field, scratch, interaction_caches, R_tensor, R_tensor_new) = caches
     nd = dimension(system)
     FT = eltype(ρ)
 
@@ -366,7 +366,7 @@ function get_new_profile!(system::SCFTSystem, ρ, w, caches)
     compute_densities!(system, w, w_bulk, q_in, q_out, Q, ρ;
                        V_eff=V_eff, exp_field=exp_field, inv_exp_field=inv_exp_field,
                        maier_saupe_field=ms_field)
-    compute_fields!(system, ρ, w_new; scratch=scratch)
+    compute_fields!(system, ρ, w_new; scratch, interaction_caches, w_current=w)
     # Bulk field first, external field on top — same ordering as the DFT-family loop.
     evaluate_external_field!(system, ρ, w_new, cache_external)
 
@@ -393,12 +393,13 @@ function converge!(prob::SCFTProblem, method::AASol, ρ::AbstractArray)
     dz = structure_dz(system.structure)
     FT = eltype(ρ)
     w, cache_model, cache_external, cache_propagator = preallocate(system, ρ; quadrature = prob.quadrature)
-    (; w_new, weights, V_eff, w_bulk, scratch, exp_field, inv_exp_field, R_tensor, R_tensor_new) = cache_model
+    (; w_new, weights, V_eff, w_bulk, scratch, exp_field, inv_exp_field,
+       interaction_caches, R_tensor, R_tensor_new) = cache_model
 
-    compute_fields!(system, ρ, w; scratch = scratch)
+    compute_fields!(system, ρ, w; scratch, interaction_caches)
 
     caches = (; w_new, w_bulk, dz, cache_external, cache_propagator, weights, V_eff,
-              exp_field, inv_exp_field, scratch, R_tensor, R_tensor_new)
+              exp_field, inv_exp_field, scratch, interaction_caches, R_tensor, R_tensor_new)
 
     iter_count = Ref(0)
     Q_last = Ref{Vector{FT}}(FT[])
