@@ -1,4 +1,6 @@
 using Test, ClassicalDFT
+using ClassicalDFT: SCFTModel, GaussianChain, WormLikeChain, RigidRod, FloryHugginsChi,
+    SmearedFloryHugginsChi, HelfandCompressibility, Incompressible, MaierSaupe
 
 # Backend-parity tests for the WLC propagator's KernelAbstractions support -- checks that
 # a converged density profile AND orientation_order_parameter's output agree between a
@@ -6,9 +8,11 @@ using Test, ClassicalDFT
 # at all, not a spurious skipped/broken entry) on any machine without a functional
 # Metal/CUDA backend.
 
+# `Metal.functional()` must run via `@eval`: a plain call in the same function would
+# execute in the world before `using Metal`, throw, and silently skip the suite.
 _metal_ok() = try
     @eval using Metal
-    Metal.functional()
+    @eval Metal.functional()
 catch
     false
 end
@@ -16,7 +20,7 @@ end
 _cuda_ok() = try
     Base.find_package("CUDA") === nothing && return false
     @eval using CUDA
-    CUDA.functional()
+    @eval CUDA.functional()
 catch
     false
 end
@@ -43,6 +47,55 @@ function _run_wlc_gpu_case(device)
     return Array(ρ), Array(S)
 end
 
+# Parity cases for the modular SCFTModel paths (composite and branched chains, the new
+# interactions, Maier-Saupe). Each builder takes a device and returns a 1D system.
+function _modular_gpu_system(device, case::Symbol)
+    st = ClassicalDFT.Uniform1DCart((0.0, 0.0), [1.0], [0.0, 8.0], 24)
+    opts = ClassicalDFT.DFTOptions(device)
+    chi = Dict(("A", "B") => 2.5)
+    build(gl, seq, chain, ints; L_max=6) = ClassicalDFT.SCFTSystem(
+        SCFTModel(gl; rho0=1.0, chain=chain, interactions=ints, L_max=L_max), st, opts;
+        mol_structure=Dict(gl[1][1] => ClassicalDFT.custom_structure(seq)),
+        ensemble=[:canonical], n_molecules=[8.0 / count(isletter, seq)])
+    if case === :rodcoil
+        return build([("rc", ["A"=>4, "B"=>6])], "AAAABBBBBB",
+            Dict("A" => RigidRod(b=1.0), "B" => GaussianChain(b=1.0)),
+            (FloryHugginsChi(chi), HelfandCompressibility(20.0)))
+    elseif case === :branched
+        return build([("star", ["A"=>3, "B"=>5])], "AA(BB)(BBB)A",
+            Dict("A" => WormLikeChain(b=1.0, lp=3.0), "B" => GaussianChain(b=1.0)),
+            (FloryHugginsChi(chi), HelfandCompressibility(20.0)))
+    elseif case === :smeared
+        return build([("db", ["A"=>5, "B"=>5])], "AAAAABBBBB", GaussianChain(b=1.0),
+            (SmearedFloryHugginsChi(chi, 0.3), HelfandCompressibility(20.0)))
+    elseif case === :incompressible
+        return build([("db", ["A"=>5, "B"=>5])], "AAAAABBBBB", GaussianChain(b=1.0),
+            (FloryHugginsChi(chi), Incompressible(lambda=5.0)))
+    elseif case === :maiersaupe
+        return build([("db", ["A"=>4, "B"=>4])], "AAAABBBB", WormLikeChain(b=1.0, lp=3.0),
+            (FloryHugginsChi(chi), HelfandCompressibility(20.0), MaierSaupe(Dict(("A", "A") => 0.3))))
+    end
+    error("unknown case $case")
+end
+
+function _run_modular_case(device, case)
+    system = _modular_gpu_system(device, case)
+    ρ = ClassicalDFT.initialize_profiles(system)
+    z = range(0, 8.0, length=24)
+    δ = 0.05 .* cos.(2π .* z ./ 8.0)
+    ρh = Array(ρ); ρh[:, 1] .+= δ; ρh[:, 2] .-= δ
+    copyto!(ρ, ρh)
+    # A fixed iteration count compares the same trajectory on both backends, except for
+    # Incompressible: its pressure update magnifies early Float32 round-off along the
+    # trajectory, so that case is compared at convergence instead.
+    if case === :incompressible
+        ClassicalDFT.converge!(system, ρ; verbose=false, tol=1e-5, maxit=2000)
+    else
+        ClassicalDFT.converge!(system, ρ; verbose=false, tol=1e-12, maxit=60)
+    end
+    return Array(ρ)
+end
+
 @testset verbose = true "WLC GPU backend parity" begin
 
 if _metal_ok()
@@ -54,6 +107,12 @@ if _metal_ok()
         @test all(isfinite, S_mtl)
         @test isapprox(ρ_cpu, ρ_mtl; rtol=0.02, atol=1e-3)
         @test isapprox(S_cpu, S_mtl; rtol=0.05, atol=1e-2)
+    end
+    @testset "Metal vs CPU: $case" for case in (:rodcoil, :branched, :smeared, :incompressible, :maiersaupe)
+        ρ_cpu = _run_modular_case(ClassicalDFT.CPU(), case)
+        ρ_mtl = _run_modular_case(Metal.MetalBackend(), case)
+        @test all(isfinite, ρ_mtl)
+        @test maximum(abs.(ρ_cpu .- ρ_mtl)) < 1e-3   # Metal runs in Float32
     end
 else
     @info "Skipping WLC Metal parity test: Metal not functional on this machine"

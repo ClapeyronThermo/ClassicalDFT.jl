@@ -349,8 +349,10 @@ function preallocate_model(system::SCFTSystem, ρ; quadrature::Symbol=:trapz)
     if has_maier_saupe(system.model)
         nspecies = length(system.model.groups.flattenedgroups)
         FT = eltype(ρ)
-        R_tensor     = zeros(FT, system.structure.ngrid..., nspecies, 6)
-        R_tensor_new = zeros(FT, system.structure.ngrid..., nspecies, 6)
+        # On the same device as ρ (a host array here breaks GPU broadcasts with the
+        # device-resident orientation grid).
+        R_tensor     = fill!(similar(ρ, FT, system.structure.ngrid..., nspecies, 6), zero(FT))
+        R_tensor_new = fill!(similar(ρ, FT, system.structure.ngrid..., nspecies, 6), zero(FT))
     end
     return (; base..., R_tensor, R_tensor_new)
 end
