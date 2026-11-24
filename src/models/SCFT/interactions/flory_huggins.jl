@@ -1,5 +1,5 @@
 """
-    FloryHuggins(chi)
+    FloryHugginsChi(chi)
 
 Local Flory-Huggins contact interaction between species, with energy and mean field
 
@@ -11,14 +11,14 @@ U = (1/ρ₀) ∫ Σ_{α<β} χ_αβ ρ_α ρ_β dr,        w_α(r) += Σ_β (χ
 (`model.groups.flattenedgroups`) or a `Dict` of species-name pairs, e.g.
 `Dict(("A","B") => 1.5)`.
 """
-struct FloryHuggins{M} <: SCFTInteractionModel
+struct FloryHugginsChi{M} <: SCFTInteractionModel
     chi::M
 end
 
-bind_interaction(int::FloryHuggins, species::Vector{String}) =
-    FloryHuggins(_species_matrix(int.chi, species, "FloryHuggins chi"; zero_diagonal=true))
+bind_interaction(int::FloryHugginsChi, species::Vector{String}) =
+    FloryHugginsChi(_species_matrix(int.chi, species, "FloryHugginsChi chi"; zero_diagonal=true))
 
-function add_field!(w, int::FloryHuggins, ρ, ρ_total, rho0, nd)
+function add_field!(w, int::FloryHugginsChi, ρ, ρ_total, rho0, nd)
     FT = eltype(w)
     chi = int.chi
     n = size(chi, 1)
@@ -33,7 +33,7 @@ function add_field!(w, int::FloryHuggins, ρ, ρ_total, rho0, nd)
     return w
 end
 
-function bulk_f(int::FloryHuggins, ρ::AbstractVector, rho0)
+function bulk_f(int::FloryHugginsChi, ρ::AbstractVector, rho0)
     chi = int.chi
     f = zero(eltype(ρ))
     for α in eachindex(ρ), β in eachindex(ρ)
@@ -42,7 +42,7 @@ function bulk_f(int::FloryHuggins, ρ::AbstractVector, rho0)
     return f / (2 * rho0)
 end
 
-function field_energy(int::FloryHuggins, ρ, ρ_total, rho0, nd, per_∫, aux)
+function field_energy(int::FloryHugginsChi, ρ, ρ_total, rho0, nd, per_∫, aux)
     chi = int.chi
     n = size(chi, 1)
     integrand = zero(ρ_total)
@@ -54,4 +54,4 @@ function field_energy(int::FloryHuggins, ρ, ρ_total, rho0, nd, per_∫, aux)
     return per_∫(integrand) / rho0
 end
 
-export FloryHuggins
+export FloryHugginsChi

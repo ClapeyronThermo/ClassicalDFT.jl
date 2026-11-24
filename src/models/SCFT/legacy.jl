@@ -11,7 +11,7 @@ Equivalent to
 
 ```julia
 SCFTModel(grouplist; rho0, chain = [GaussianChain(b=bα) for bα in b],
-          interactions = (HelfandCompressibility(kappa), FloryHuggins(chi)))
+          interactions = (HelfandCompressibility(kappa), FloryHugginsChi(chi)))
 ```
 
 `b` and `chi` are indexed by species (`groups.flattenedgroups`). Returns an
@@ -21,7 +21,7 @@ function SCFTLatticeFluid(grouplist, b::AbstractVector, chi::AbstractMatrix;
                           rho0::Real, kappa::Real, idealmodel = BasicIdeal, references = String[])
     return SCFTModel(grouplist; rho0, idealmodel, references,
         chain = SCFTChainModel[GaussianChain(b = bα) for bα in b],
-        interactions = (HelfandCompressibility(kappa), FloryHuggins(chi)))
+        interactions = (HelfandCompressibility(kappa), FloryHugginsChi(chi)))
 end
 
 """
@@ -34,7 +34,7 @@ Worm-like-chain SCFT model: every species is a [`WormLikeChain`](@ref) with bond
 
 ```julia
 SCFTModel(grouplist; rho0, L_max, chain = [WormLikeChain(b=bα, lp=lpα) for (bα, lpα) in zip(b, lp)],
-          interactions = (HelfandCompressibility(kappa), FloryHuggins(chi), MaierSaupe(nu)))
+          interactions = (HelfandCompressibility(kappa), FloryHugginsChi(chi), MaierSaupe(nu)))
 ```
 
 Returns an [`SCFTModel`](@ref).
@@ -42,7 +42,7 @@ Returns an [`SCFTModel`](@ref).
 function SCFTWormLikeChainFluid(grouplist, b::AbstractVector, lp::AbstractVector, chi::AbstractMatrix;
                                 rho0::Real, kappa::Real, nu::Union{AbstractMatrix,Nothing} = nothing,
                                 L_max::Int = 8, idealmodel = BasicIdeal, references = String[])
-    ints = (HelfandCompressibility(kappa), FloryHuggins(chi))
+    ints = (HelfandCompressibility(kappa), FloryHugginsChi(chi))
     nu === nothing || (ints = (ints..., MaierSaupe(nu)))
     return SCFTModel(grouplist; rho0, L_max, idealmodel, references,
         chain = SCFTChainModel[WormLikeChain(b = bα, lp = lpα) for (bα, lpα) in zip(b, lp)],

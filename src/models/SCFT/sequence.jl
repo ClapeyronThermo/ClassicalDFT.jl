@@ -218,7 +218,7 @@ function SCFTSequenceFluid(descriptor::SequenceDescriptor, b; rho0::Real, kappa:
     chi, b_vec = sequence_chi_b(descriptor, b; rho0=rho0, gamma=gamma)
     return SCFTModel(groups; rho0, idealmodel, references,
         chain = SCFTChainModel[GaussianChain(b = bk) for bk in b_vec],
-        interactions = (HelfandCompressibility(kappa), FloryHuggins(chi)))
+        interactions = (HelfandCompressibility(kappa), FloryHugginsChi(chi)))
 end
 
 """

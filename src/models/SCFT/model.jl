@@ -30,7 +30,7 @@ cubic equations of state (`PR(components; alpha=…, mixing=…)`):
   to every species, a `Vector` in species order, or a `Dict` from species name, e.g.
   `Dict("A" => RigidRod(b=1.0), "B" => GaussianChain(b=1.0))`.
 - **interactions** — a tuple of [`SCFTInteractionModel`](@ref)s, e.g.
-  `(FloryHuggins(chi), HelfandCompressibility(20.0), MaierSaupe(nu))`. Every mean field,
+  `(FloryHugginsChi(chi), HelfandCompressibility(20.0), MaierSaupe(nu))`. Every mean field,
   bulk free energy and inhomogeneous free energy is the sum of their contributions.
 - `rho0` — reference (total segment) density; `L_max` — spherical-harmonic truncation for
   orientation-resolved species (one shared orientation grid).
@@ -43,7 +43,7 @@ and mixing entropy: SCFT counts that once, through the single-chain partition fu
 model = SCFTModel([("rodcoil", ["A"=>8, "B"=>8])];
     rho0 = 1.0,
     chain = Dict("A" => WormLikeChain(b=1.0, lp=10.0), "B" => GaussianChain(b=1.0)),
-    interactions = (FloryHuggins(Dict(("A","B") => 1.2)), HelfandCompressibility(20.0)))
+    interactions = (FloryHugginsChi(Dict(("A","B") => 1.2)), HelfandCompressibility(20.0)))
 ```
 """
 struct SCFTModel{I<:IdealModel,U<:Tuple} <: SCFTLatticeFluidModel
@@ -65,7 +65,7 @@ function SCFTModel(groups::GroupParam; rho0::Real, chain = GaussianChain(), inte
     chains = _resolve_chains(chain, species)
     ints = interactions isa SCFTInteractionModel ? (interactions,) : Tuple(interactions)
     all(i -> i isa SCFTInteractionModel, ints) || throw(ArgumentError(
-        "interactions must be SCFTInteractionModels, e.g. (FloryHuggins(chi), HelfandCompressibility(20.0))."))
+        "interactions must be SCFTInteractionModels, e.g. (FloryHugginsChi(chi), HelfandCompressibility(20.0))."))
     ints = map(i -> bind_interaction(i, species), ints)
     ideal = init_model(idealmodel, groups.components, String[], false)
     model = SCFTModel(groups.components, groups, Float64(rho0), chains, ints, L_max, ideal, references)

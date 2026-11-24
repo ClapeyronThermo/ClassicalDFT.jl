@@ -323,33 +323,31 @@ end
 """
     get_new_profile!(system::SCFTSystem, ρ, w, caches)
 
-One SCFT fixed-point step.
+One SCFT fixed-point step, for every chain representation and interaction set.
 
-Given the current mean-field potential `w`:
-- propagate the chains
-- compute single-chain partition functions
-- assemble the new density profile `ρ`
-- evaluate the new field guess `caches.w_new` from that density.
+Given the current scalar mean field `w` (and, when the model has a [`MaierSaupe`](@ref)
+interaction, the current orientation-moment state `caches.R_tensor`):
+1. `exp_field[α] = exp(w_bulk[α] - w_α)` (and its inverse), shared by every step below;
+2. the orientation-dependent field (`compute_maier_saupe_field`, from the lagged
+   `R_tensor`; `nothing` without Maier-Saupe);
+3. propagate the chains, then single-chain partition functions `Q` and densities `ρ`;
+4. the new scalar field `caches.w_new` from the interactions (`compute_fields!`) plus
+   any external field;
+5. the new orientation moments `caches.R_tensor_new` from this step's propagators.
 
-`caches` is a named tuple of buffers preallocated once outside the iteration loop:
-`w_new, w_bulk, dz, cache_external, cache_propagator, weights, V_eff, exp_field,
-inv_exp_field, scratch`. `cache_propagator` is threaded through opaquely (whatever shape
-`preallocate_propagator` returned for `system.propagator`'s concrete type — a positional
-`Tuple` for `DiscreteGaussianChainPropagator`, a `NamedTuple` for `WLCPropagator`) and
-`q_in`/`q_out` are fetched from it via the generic `cache_q_in`/`cache_q_out` accessors
-(`src/propagator/propagator.jl`) rather than by destructuring named fields, so this loop
-doesn't need to know which propagator's cache shape it's holding.
+`caches` holds buffers preallocated once outside the loop: `w_new, w_bulk, dz,
+cache_external, cache_propagator, weights, V_eff, exp_field, inv_exp_field, scratch,
+R_tensor, R_tensor_new`. `cache_propagator` is opaque (its shape depends on the
+propagator); `q_in`/`q_out` are read from it via `cache_q_in`/`cache_q_out`.
 
 Returns `Q` (one partition function per molecule type).
 """
 function get_new_profile!(system::SCFTSystem, ρ, w, caches)
-    (; w_new, w_bulk, dz, cache_external, cache_propagator,
-       weights, V_eff, exp_field, inv_exp_field, scratch) = caches
+    (; w_new, w_bulk, dz, cache_external, cache_propagator, weights, V_eff,
+       exp_field, inv_exp_field, scratch, R_tensor, R_tensor_new) = caches
     nd = dimension(system)
     FT = eltype(ρ)
 
-    # exp_field[α] = exp(w_bulk[α] - w_α); reused by propagate!,
-    # compute_partition_functions, and compute_densities! below.
     for α in eachindex(exp_field)
         w_α = selectdim(w, nd+1, α)
         w_bulk_α = FT(w_bulk[α])
@@ -357,190 +355,72 @@ function get_new_profile!(system::SCFTSystem, ρ, w, caches)
         @. inv_exp_field[α] = one(FT) / exp_field[α]
     end
 
+    ms_field = R_tensor === nothing ? nothing : compute_maier_saupe_field(system, R_tensor)
+
     propagate!(system, ρ, w, cache_propagator;
-              w_bulk=w_bulk, exp_field=exp_field)
+               w_bulk=w_bulk, exp_field=exp_field, maier_saupe_field=ms_field)
     q_in = cache_q_in(cache_propagator)
     q_out = cache_q_out(cache_propagator)
     Q = compute_partition_functions(system, w, w_bulk, q_in, dz;
-                               weights=weights, V_eff=V_eff, exp_field=exp_field)
+                                    weights=weights, V_eff=V_eff, exp_field=exp_field)
     compute_densities!(system, w, w_bulk, q_in, q_out, Q, ρ;
-                       V_eff=V_eff, exp_field=exp_field, inv_exp_field=inv_exp_field)
+                       V_eff=V_eff, exp_field=exp_field, inv_exp_field=inv_exp_field,
+                       maier_saupe_field=ms_field)
     compute_fields!(system, ρ, w_new; scratch=scratch)
-    # No-ops today (system.external_field is always nothing — see SCFTSystem's docstring);
-    # mirrors the generic get_new_profile!'s δFδρ_res! → evaluate_external_field! →
-    # propagate! ordering (bulk field first, external field added on top) so a future
-    # field-type implementation for SCFTLatticeFluid only needs to add the dispatch, not
-    # touch this loop.
+    # Bulk field first, external field on top — same ordering as the DFT-family loop.
     evaluate_external_field!(system, ρ, w_new, cache_external)
 
+    if R_tensor !== nothing
+        R_tensor_new .= compute_orientation_moments(system, w, w_bulk, q_in, q_out, Q;
+                            V_eff=V_eff, inv_exp_field=inv_exp_field, maier_saupe_field=ms_field)
+    end
     return Q
 end
 
-function converge!(prob::SCFTProblem{S}, method::AASol, ρ::AbstractArray) where S
+"""
+    converge!(prob::SCFTProblem, method::AASol, ρ::AbstractArray)
+
+Solve the SCFT fixed point for any [`SCFTModel`](@ref). The scalar field `w` is the
+Anderson-accelerated vector. Auxiliary state that is not part of `w` — today the
+Maier-Saupe orientation moments `R_tensor` — is updated by damped mixing
+(`R ← (1-β)R + β·R_new`, `β = method.beta`) inside the fixed-point map rather than being
+appended to the Anderson vector: combining the two in one extrapolated vector was found
+to diverge to NaN at every `ν` tried, a conditioning problem from mixing variables with
+different scales, whereas the decoupled update converges.
+"""
+function converge!(prob::SCFTProblem, method::AASol, ρ::AbstractArray)
     system = prob.system
     dz = structure_dz(system.structure)
     FT = eltype(ρ)
-    # Universal preallocation entry point (src/base/devices.jl), same as the generic
-    # DFT-family converge! above: dispatches to preallocate_model,
-    # preallocate_external_potential, and preallocate_propagator. SCFT's main field
-    # buffer `w` is the returned δfδρ_res; `quadrature` is forwarded to preallocate_model
-    # since it's a solve-time choice, not a system invariant.
     w, cache_model, cache_external, cache_propagator = preallocate(system, ρ; quadrature = prob.quadrature)
-    (; w_new, weights, V_eff, w_bulk, scratch, exp_field, inv_exp_field) = cache_model
+    (; w_new, weights, V_eff, w_bulk, scratch, exp_field, inv_exp_field, R_tensor, R_tensor_new) = cache_model
 
     compute_fields!(system, ρ, w; scratch = scratch)
 
-    # Bundle the buffers preallocated above into a single cache passed to
-    # get_new_profile! every iteration. cache_propagator is kept opaque (see
-    # get_new_profile!'s docstring) rather than destructured here.
-    caches = (; w_new, w_bulk, dz, cache_external, cache_propagator,
-              weights, V_eff, exp_field, inv_exp_field, scratch)
+    caches = (; w_new, w_bulk, dz, cache_external, cache_propagator, weights, V_eff,
+              exp_field, inv_exp_field, scratch, R_tensor, R_tensor_new)
 
     iter_count = Ref(0)
     Q_last = Ref{Vector{FT}}(FT[])
+    β = FT(method.beta)
 
-    # aasol's fixed-point map: given the current field (flattened), advance one SCFT
-    # step and return the new field (flattened). ρ/w_new/Q_last are mutated as a side
-    # effect, matching get_new_profile!'s own in-place contract.
     function GFix!(G, xin)
         copyto!(w, reshape(xin, size(w)))
         Qᵢ = get_new_profile!(system, ρ, w, caches)
         Q_last[] = Qᵢ
         GFix_logger(prob, iter_count, ρ, (Qᵢ, w, V_eff, w_bulk))
         copyto!(G, vec(w_new))
+        if R_tensor !== nothing
+            @. R_tensor = (1 - β) * R_tensor + β * R_tensor_new
+        end
         return G
     end
 
     result = aasol(GFix!, vec(copy(w)), method)
 
     w .= reshape(result.solution, size(w))
-    # ρ already holds the density from the last GFix! call — aasol evaluates the
-    # fixed-point map once more at `solution` to populate `functionval`, so ρ is
-    # already consistent with the converged w.
-    converged = result.idid
-    err = isempty(result.history) ? FT(NaN) : FT(result.history[end])
-
-    if method.verbose
-        H = free_energy(system, ρ, w, Q_last[]; V_eff=V_eff, w_bulk=w_bulk)
-        msg = converged ? "SCFT converged" : "SCFT did not converge"
-        @info "$msg after $(iter_count[]) iterations: err = $(round(err; sigdigits=3)) | F = $(round(H; sigdigits=6))"
-    end
-end
-
-"""
-    get_new_profile!(system::SCFTWLCSystem, ρ, w, R_tensor, R_tensor_new, caches)
-
-`WLCPropagator`-specific extension of `get_new_profile!(system::SCFTSystem, ρ, w,
-caches)` (above), threading the Maier-Saupe orientation-moment state `R_tensor`
-through: builds the orientation-dependent mean field from the *previous* iteration's
-`R_tensor` (lagged, exactly like every other quantity in this fixed-point loop —
-`w`/`ρ`/`Q` are all one-iteration-stale relative to each other too), passes it to
-`propagate!`/`compute_densities!`, then recomputes a fresh `R_tensor_new` from the
-propagators this call just produced (mirroring how `w_new` is freshly recomputed from
-this call's `ρ`). Skipped entirely (falls back to exactly the generic 4-arg method's
-behavior) when `caches.maier_saupe_active` is `false`.
-"""
-function get_new_profile!(system::SCFTWLCSystem, ρ, w, R_tensor, R_tensor_new, caches)
-    (; w_new, w_bulk, dz, cache_external, cache_propagator,
-       weights, V_eff, exp_field, inv_exp_field, scratch, maier_saupe_active) = caches
-    nd = dimension(system)
-    FT = eltype(ρ)
-
-    for α in eachindex(exp_field)
-        w_α = selectdim(w, nd + 1, α)
-        w_bulk_α = FT(w_bulk[α])
-        @. exp_field[α]     = exp(w_bulk_α - w_α)
-        @. inv_exp_field[α] = one(FT) / exp_field[α]
-    end
-
-    maier_saupe_field = maier_saupe_active ? compute_maier_saupe_field(system, R_tensor) : nothing
-
-    propagate!(system, ρ, w, cache_propagator;
-              w_bulk=w_bulk, exp_field=exp_field, maier_saupe_field=maier_saupe_field)
-    q_in = cache_q_in(cache_propagator)
-    q_out = cache_q_out(cache_propagator)
-    Q = compute_partition_functions(system, w, w_bulk, q_in, dz;
-                               weights=weights, V_eff=V_eff, exp_field=exp_field)
-    compute_densities!(system, w, w_bulk, q_in, q_out, Q, ρ;
-                       V_eff=V_eff, exp_field=exp_field, inv_exp_field=inv_exp_field,
-                       maier_saupe_field=maier_saupe_field)
-    compute_fields!(system, ρ, w_new; scratch=scratch)
-    evaluate_external_field!(system, ρ, w_new, cache_external)
-
-    if maier_saupe_active
-        R_tensor_new .= compute_orientation_moments(system, w, w_bulk, q_in, q_out, Q;
-                            V_eff=V_eff, inv_exp_field=inv_exp_field, maier_saupe_field=maier_saupe_field)
-    end
-
-    return Q
-end
-
-"""
-    converge!(prob::SCFTProblem{<:SCFTWLCSystem}, method::AASol, ρ::AbstractArray)
-
-`WLCPropagator`-specific extension of `converge!(prob::SCFTProblem{S}, ...) where S`
-(above): when the model has no active `MaierSaupe` interaction (`nu` entirely zero), falls back via `invoke` to
-*exactly* the generic method (not merely equivalent code — the same method, byte-for-
-byte, guaranteeing zero behavioral change at `nu=0`).
-
-Otherwise, `w` alone is still the *only* vector Anderson-accelerated — `R_tensor` is
-updated by simple damped mixing (`R_tensor ← (1-β)R_tensor + β·R_tensor_new`, same `β`
-`method.beta` already uses for everything else) as ordinary side-effecting state
-captured in `GFix!`'s closure, **not** concatenated into `aasol`'s state vector.
-
-This was tried the "obvious" way first — `vcat(vec(w), vec(R_tensor))` as one combined
-Anderson-accelerated vector — and empirically diverged to NaN partway through
-convergence *regardless of `ν`'s magnitude* (identical free-energy trajectory for
-`ν=0.05`, `0.5`, and `3.0`, all failing at the same iteration a `ν=0` run sails past
-cleanly): a signature of an Anderson-mixing/conditioning problem from combining two
-variables with different scales/dynamics in one extrapolated vector, not a physics or
-sign error in the Maier-Saupe formulas themselves (independently validated to ~1e-16
-against the classical bulk theory beforehand — see the design plan's Milestones 0-1).
-Decoupling `R_tensor` from the Anderson vector converges cleanly at every `ν` tested.
-
-Written with `SCFTProblem{<:SCFTWLCSystem}` (inline `<:X` sugar on the type parameter)
-rather than `SCFTProblem{S} where S<:SCFTWLCSystem` deliberately — the latter is NOT
-more specific than the generic method's own `SCFTProblem{S} where S` in Julia's
-dispatch (confirmed by isolated testing, same pitfall already hit and fixed once this
-session for `SCFTWLCSystem` itself, see its docstring in `src/models/SCFT/scft.jl`).
-"""
-function converge!(prob::SCFTProblem{<:SCFTWLCSystem}, method::AASol, ρ::AbstractArray)
-    system = prob.system
-    if !has_maier_saupe(system.model)
-        return invoke(converge!, Tuple{SCFTProblem,AASol,AbstractArray}, prob, method, ρ)
-    end
-
-    dz = structure_dz(system.structure)
-    FT = eltype(ρ)
-    w, cache_model, cache_external, cache_propagator = preallocate(system, ρ; quadrature = prob.quadrature)
-    (; w_new, weights, V_eff, w_bulk, scratch, exp_field, inv_exp_field,
-       R_tensor, R_tensor_new, maier_saupe_active) = cache_model
-
-    compute_fields!(system, ρ, w; scratch = scratch)
-
-    caches = (; w_new, w_bulk, dz, cache_external, cache_propagator,
-              weights, V_eff, exp_field, inv_exp_field, scratch, maier_saupe_active)
-
-    iter_count = Ref(0)
-    Q_last = Ref{Vector{FT}}(FT[])
-    β = FT(method.beta)
-
-    # aasol's fixed-point map: only `w` is part of the Anderson-accelerated vector.
-    # `R_tensor` is mutated in place via damped mixing as ordinary closure state — see
-    # this method's docstring for why it is deliberately kept out of `xin`/`G`.
-    function GFix!(G, xin)
-        copyto!(w, reshape(xin, size(w)))
-        Qᵢ = get_new_profile!(system, ρ, w, R_tensor, R_tensor_new, caches)
-        Q_last[] = Qᵢ
-        GFix_logger(prob, iter_count, ρ, (Qᵢ, w, V_eff, w_bulk))
-        copyto!(G, vec(w_new))
-        @. R_tensor = (1 - β) * R_tensor + β * R_tensor_new
-        return G
-    end
-
-    result = aasol(GFix!, vec(copy(w)), method)
-
-    w .= reshape(result.solution, size(w))
+    # ρ already holds the density from the last GFix! call (aasol evaluates the map once
+    # more at `solution`), so it is consistent with the converged w.
     converged = result.idid
     err = isempty(result.history) ? FT(NaN) : FT(result.history[end])
 

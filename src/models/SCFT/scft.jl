@@ -6,7 +6,7 @@ include("legacy.jl")
 
 Compute the scalar mean fields `w` from the density profiles `ρ` as the sum of every
 interaction's field (`add_field!`, see [`SCFTInteractionModel`](@ref)), e.g. for
-`(FloryHuggins(χ), HelfandCompressibility(κ))`:
+`(FloryHugginsChi(χ), HelfandCompressibility(κ))`:
 ```
  w_α(r) = Σ_β (χ_αβ / ρ₀) ρ_β(r) + (κ / ρ₀)(ρ₊(r) / ρ₀ - 1)
 ```
@@ -109,7 +109,10 @@ The shift factors cancel between numerator and denominator (Q̃), keeping values
 `prefactor = n_molecules/(V_eff*Q̃)` (canonical) or `bulk_density/(N*Q̃)` (grand canonical).
 """
 function compute_densities!(system::SCFTSystem, w, w_bulk, q_in, q_out, Q, ρ;
-                            V_eff=nothing, exp_field=nothing, inv_exp_field=nothing)
+                            V_eff=nothing, exp_field=nothing, inv_exp_field=nothing,
+                            maier_saupe_field=nothing)
+    maier_saupe_field === nothing || throw(ArgumentError(
+        "Gaussian-chain species carry no bond orientation, so they cannot take a Maier-Saupe field."))
     nd = dimension(system)
     species = system.species
     nmol = length(species.sequence)

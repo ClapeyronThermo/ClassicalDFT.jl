@@ -338,30 +338,20 @@ function _preallocate_model_scft_common(system::SCFTSystem, ρ; quadrature::Symb
 end
 
 function preallocate_model(system::SCFTSystem, ρ; quadrature::Symbol=:trapz)
-    return _preallocate_model_scft_common(system, ρ; quadrature=quadrature)
-end
-
-"""
-    preallocate_model(system::SCFTWLCSystem, ρ; quadrature::Symbol=:trapz)
-
-`WLCPropagator`-specific extension of `preallocate_model(system::SCFTSystem, ...)`
-(reused verbatim via `_preallocate_model_scft_common`, avoiding self-recursion): same
-buffers, plus the Maier-Saupe orientation-moment tensor state `R_tensor`/`R_tensor_new`
-(shape `(ngrid...,nspecies,6)`, `compute_orientation_moments`, `src/models/SCFT/scft.jl`)
-and a precomputed `maier_saupe_active` flag (`true` iff the model's `MaierSaupe` `nu` has
-any nonzero entry) so `converge!`/`get_new_profile!` can skip all Maier-Saupe work
-(field construction, extra `free_energy` terms) when `nu` is entirely zero, exactly
-reproducing pre-Maier-Saupe behavior at zero extra propagator cost.
-"""
-function preallocate_model(system::SCFTWLCSystem, ρ; quadrature::Symbol=:trapz)
     base = _preallocate_model_scft_common(system, ρ; quadrature=quadrature)
-    nspecies = length(system.model.groups.flattenedgroups)
-    ngrid = system.structure.ngrid
-    FT = eltype(ρ)
-    ms_active = has_maier_saupe(system.model)
-    R_tensor     = zeros(FT, ngrid..., nspecies, 6)
-    R_tensor_new = zeros(FT, ngrid..., nspecies, 6)
-    return (; base..., R_tensor, R_tensor_new, maier_saupe_active = ms_active)
+    # Auxiliary solver state for interactions whose field is not part of `w`. Today that
+    # is Maier-Saupe: the orientation-moment tensor `R_tensor` (shape
+    # `(ngrid..., nspecies, 6)`, see `compute_orientation_moments`) and its per-iteration
+    # update `R_tensor_new`. Both are `nothing` when the model has no active MaierSaupe,
+    # and converge!/get_new_profile! then skip all orientational-field work.
+    R_tensor = R_tensor_new = nothing
+    if has_maier_saupe(system.model)
+        nspecies = length(system.model.groups.flattenedgroups)
+        FT = eltype(ρ)
+        R_tensor     = zeros(FT, system.structure.ngrid..., nspecies, 6)
+        R_tensor_new = zeros(FT, system.structure.ngrid..., nspecies, 6)
+    end
+    return (; base..., R_tensor, R_tensor_new)
 end
 
 function length_scales(model::EoSModel)

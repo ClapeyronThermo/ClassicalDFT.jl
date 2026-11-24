@@ -271,7 +271,7 @@ function propagate!(system, propagator::DiscreteGaussianChainPropagator, ρ, δf
 end
 
 """
-    propagate!(system::SCFTSystem, ρ, w, cache_propagator; w_bulk, exp_field=nothing)
+    propagate!(system::SCFTSystem, ρ, w, cache_propagator; w_bulk, exp_field=nothing, maier_saupe_field=nothing)
 
 Run discrete-Gaussian-chain tree sweeps (see `_dgc_tree_sweep!`) using shifted fields
 `Δw = w - w_bulk`. `ρ` is accepted but unused — kept purely for positional uniformity
@@ -284,7 +284,9 @@ The shifted propagator satisfies `q̃(r,s) = q(r,s) * exp(Σ_{t=1}^{s} w_bulk[α
 so `Q̃ ≈ 1` for uniform systems (instead of `Q ∼ exp(-N * w_bulk) ≈ 0`).
 """
 function propagate!(system::SCFTSystem, ρ, w, cache_propagator;
-                    w_bulk, exp_field=nothing)
+                    w_bulk, exp_field=nothing, maier_saupe_field=nothing)
+    maier_saupe_field === nothing || throw(ArgumentError(
+        "Gaussian-chain species carry no bond orientation, so they cannot take a Maier-Saupe field."))
     q_in, q_out, buf_r, buf_c, child_buf, P, iP = cache_propagator
     nd = dimension(system)
     FT = eltype(w)
