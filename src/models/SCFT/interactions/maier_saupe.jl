@@ -42,6 +42,20 @@ end
 
 has_maier_saupe(int::MaierSaupe) = any(!iszero, int.nu)
 
+# Isotropic part of the Maier-Saupe self-energy: in a uniform isotropic phase
+# R^α = ρ_α δ/3, so U_MS/V = −(3/(4ρ₀)) Σ ν_αβ R^α:R^β = −(1/(4ρ₀)) Σ ν_αβ ρ_α ρ_β. The
+# inhomogeneous free energy already contains it (through the constant, isotropic part of
+# the orientational field), so the bulk free energy, a_res and w_bulk must too. The
+# anisotropic (nematic) part is handled by `nematic_free_energy`.
+function bulk_f(int::MaierSaupe, ρ::AbstractVector, rho0)
+    nu = int.nu
+    f = zero(eltype(ρ))
+    for α in eachindex(ρ), β in eachindex(ρ)
+        f += nu[α, β] * ρ[α] * ρ[β]
+    end
+    return -f / (4 * rho0)
+end
+
 function field_energy(int::MaierSaupe, ρ, ρ_total, ctx)
     (; rho0, nd, per_∫) = ctx
     R_tensor = get(ctx, :R_tensor, nothing)

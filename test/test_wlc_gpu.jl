@@ -86,9 +86,10 @@ function _run_modular_case(device, case)
     ρh = Array(ρ); ρh[:, 1] .+= δ; ρh[:, 2] .-= δ
     copyto!(ρ, ρh)
     # A fixed iteration count compares the same trajectory on both backends, except for
-    # Incompressible: its pressure update magnifies early Float32 round-off along the
-    # trajectory, so that case is compared at convergence instead.
-    if case === :incompressible
+    # Incompressible and Maier-Saupe: their extra unknowns (pressure field, orientation
+    # moments) magnify early Float32 round-off along the trajectory, so those cases are
+    # compared at convergence instead.
+    if case === :incompressible || case === :maiersaupe
         ClassicalDFT.converge!(system, ρ; verbose=false, tol=1e-5, maxit=2000)
     else
         ClassicalDFT.converge!(system, ρ; verbose=false, tol=1e-12, maxit=60)

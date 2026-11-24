@@ -17,6 +17,21 @@ function expand_eig_to_lm(eig_l::AbstractVector{FP}, sht::SHTPlan) where FP<:Abs
 end
 
 """
+    _bond_kappa(b, lp, α, β)
+
+Bending stiffness `κ = lp/b` of a rod bond between species `α` and `β`: the species' own
+`κ` for a like bond, else the RMS of the two — except when exactly one side is the exact
+rigid-rod limit (`κ = Inf`): then the flexible side's own `κ`, since letting `Inf`
+dominate the RMS would force the junction exactly parallel to the rigid neighbour.
+"""
+function _bond_kappa(b, lp, α, β)
+    α == β && return lp[α] / b[α]
+    κα, κβ = lp[α] / b[α], lp[β] / b[β]
+    isinf(κα) != isinf(κβ) && return isinf(κα) ? κβ : κα
+    return sqrt((κα^2 + κβ^2) / 2)
+end
+
+"""
     WLCPropagator(model, species, structure, device, FP=Float64; L_max=8)
 
 Construct a `WLCPropagator`, matching the generic `(model, species, structure, device,
@@ -114,21 +129,8 @@ function WLCPropagator(
             gauss_kernel[(α, β)] = CT.(exp.(-2 * FP(pi)^2 * b_g^2 .* ν_sq ./ 3))
             continue
         end
-        if α == β
-            b_bond = FP(b_species[α])
-            κ_bond = FP(lp_species[α] / b_species[α])
-        else
-            b_bond = sqrt(FP(b_species[α]^2 + b_species[β]^2) / 2)
-            κα, κβ = lp_species[α] / b_species[α], lp_species[β] / b_species[β]
-            if isinf(κα) != isinf(κβ)
-                # Exactly one side rigid: use the flexible side's own κ rather than
-                # letting Inf dominate the RMS below, which would over-constrain the
-                # junction to be exactly parallel to the rigid neighbor.
-                κ_bond = FP(isinf(κα) ? κβ : κα)
-            else
-                κ_bond = sqrt(FP(κα^2 + κβ^2) / 2)
-            end
-        end
+        b_bond = α == β ? FP(b_species[α]) : sqrt(FP(b_species[α]^2 + b_species[β]^2) / 2)
+        κ_bond = FP(_bond_kappa(b_species, lp_species, α, β))
 
         phase = zeros(CT, rfft_ngrid..., n_orient)
         for i in 1:n_orient

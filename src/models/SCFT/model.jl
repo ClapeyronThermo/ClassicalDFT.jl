@@ -73,7 +73,7 @@ function SCFTModel(groups::GroupParam; rho0::Real, chain = GaussianChain(), inte
     return model
 end
 
-export SCFTModel
+export SCFTModel, bulk_free_energy_density
 
 #= ---------------------------------------------------------------------------------
    Accessors (the only way the propagators, solver and sampling code read the model)
