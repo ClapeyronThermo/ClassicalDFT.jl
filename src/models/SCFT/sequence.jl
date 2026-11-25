@@ -194,30 +194,91 @@ therefore sufficient for `free_energy` to be correct too, with no changes needed
 
 Exactly one sequence-chain molecule type per system (see
 [`SCFTSequenceSystem`](@ref) — the `1/Nc` above is chain-length-specific, so blending
-differently-sized sequence chains has no unambiguous shared normalization), linear chains
-only, and Gaussian segments only (`DiscreteGaussianChainPropagator`, the paper's own
-treatment).
+differently-sized sequence chains has no unambiguous shared normalization) and linear
+chains only. This constructor uses Gaussian segments (the paper's own treatment); for
+worm-like, rigid-rod or mixed segments and other interactions use
+[`sequence_model`](@ref), of which this is the Gaussian special case.
 """
 function SCFTSequenceFluid(descriptor::SequenceDescriptor, b; rho0::Real, kappa::Real,
                             gamma = (f1, f2) -> sum(abs2, f1 .- f2),
                             component::String = "sequence",
                             idealmodel = BasicIdeal, references::Vector{String} = String[])
-    Nc = size(descriptor.values, 1)
-    names = ["n$k" for k in 1:Nc]
+    _, b_vec = sequence_chi_b(descriptor, b; rho0=rho0, gamma=gamma)
+    return sequence_model(descriptor; rho0, gamma, component, idealmodel, references,
+        chain = SCFTChainModel[GaussianChain(b = bk) for bk in b_vec],
+        interactions = (HelfandCompressibility(kappa),))
+end
 
+# One species per contour node, linear bonds k–(k+1): the pre-expanded GroupParam of a
+# sequence chain (see SCFTSequenceFluid's docstring for why custom_structure is bypassed).
+function _sequence_groups(component::String, Nc::Int)
+    names = ["n$k" for k in 1:Nc]
     bondmat = zeros(Int, Nc, Nc)
     for k in 1:(Nc - 1)
         bondmat[k, k+1] = 1
         bondmat[k+1, k] = 1
     end
+    return GroupParam([component], [names], :sequence, [ones(Int, Nc)],
+                      [bondmat], [collect(1:Nc)], names, [ones(Int, Nc)], String[])
+end
 
-    groups = GroupParam([component], [names], :sequence, [ones(Int, Nc)],
-                         [bondmat], [collect(1:Nc)], names, [ones(Int, Nc)], String[])
+"""
+    sequence_pair_matrix(descriptor::SequenceDescriptor, kernel)
 
-    chi, b_vec = sequence_chi_b(descriptor, b; rho0=rho0, gamma=gamma)
-    return SCFTModel(groups; rho0, idealmodel, references,
-        chain = SCFTChainModel[GaussianChain(b = bk) for bk in b_vec],
-        interactions = (HelfandCompressibility(kappa), FloryHugginsChi(chi)))
+Dense, symmetric `Nc×Nc` node-pair parameter `M[k,k'] = kernel(f(s_k), f(s_k'))` from a
+descriptor, with no prefactor — for node-resolved interactions in a
+[`sequence_model`](@ref), e.g. a Maier-Saupe coupling between rod-like nodes:
+`MaierSaupe(sequence_pair_matrix(d, (f1, f2) -> ν * f1[1] * f2[1]))`. `kernel` receives the
+descriptor rows as vectors. With one species per node, `M[k,k'] = c` between every node of
+two blocks reproduces the block-level parameter `c` exactly (the node fields sum to the
+block field).
+"""
+function sequence_pair_matrix(descriptor::SequenceDescriptor, kernel)
+    Nc = size(descriptor.values, 1)
+    M = zeros(Float64, Nc, Nc)
+    for k in 1:Nc, kp in k:Nc
+        v = kernel(view(descriptor.values, k, :), view(descriptor.values, kp, :))
+        M[k, kp] = v
+        M[kp, k] = v
+    end
+    return M
+end
+
+"""
+    sequence_model(descriptor::SequenceDescriptor; rho0, chain=GaussianChain(),
+                   gamma=(f1,f2)->sum(abs2, f1 .- f2), interactions=(HelfandCompressibility(20.0),),
+                   L_max=8, component="sequence", idealmodel=BasicIdeal, references=String[])
+
+Sequence-defined [`SCFTModel`](@ref): a single linear chain of `Nc` contour nodes
+(`Nc = size(descriptor.values, 1)`), each its own species (`"n1"`, `"n2"`, …), built with
+any chain representation and interactions:
+
+- `chain`: one [`SCFTChainModel`](@ref) for every node, a vector of `Nc`, or a function of
+  the contour position `s ∈ [0,1]` (`descriptor.s`), e.g. a stiffness taper
+  `s -> WormLikeChain(b=1.0, lp=1 + 9s)` or a rod-coil `s -> s < 0.5 ? RigidRod() : GaussianChain()`.
+- `gamma`: the sequence-SCFT interaction kernel of Xie & Olsen (2022), turned into a
+  [`FloryHugginsChi`](@ref) by [`sequence_chi_b`](@ref); `nothing` for none.
+- `interactions`: further interactions (compressibility, excluded volume, and
+  node-resolved ones built with [`sequence_pair_matrix`](@ref)); the sequence χ is
+  appended after them.
+
+Build the system with [`SCFTSequenceSystem`](@ref). [`SCFTSequenceFluid`](@ref) is the
+Gaussian-chain special case.
+"""
+function sequence_model(descriptor::SequenceDescriptor; rho0::Real, chain = GaussianChain(),
+                        gamma = (f1, f2) -> sum(abs2, f1 .- f2),
+                        interactions = (HelfandCompressibility(20.0),), L_max::Int = 8,
+                        component::String = "sequence", idealmodel = BasicIdeal,
+                        references::Vector{String} = String[])
+    Nc = size(descriptor.values, 1)
+    chains = chain isa Function ? SCFTChainModel[chain(s) for s in descriptor.s] : chain
+    ints = interactions isa SCFTInteractionModel ? (interactions,) : Tuple(interactions)
+    if gamma !== nothing
+        chi, _ = sequence_chi_b(descriptor, 1.0; rho0=rho0, gamma=gamma)
+        ints = (ints..., FloryHugginsChi(chi))
+    end
+    return SCFTModel(_sequence_groups(component, Nc); rho0, chain = chains, interactions = ints,
+                     L_max, idealmodel, references)
 end
 
 """
@@ -253,5 +314,5 @@ function SCFTSequenceSystem(model::SCFTModel, structure::DFTStructure,
     return SCFTSystem(model, species, structure, propagator, options, normalized_external_field)
 end
 
-export SCFTSequenceFluid, SCFTSequenceSystem, SequenceDescriptor,
-       step_descriptor, taper_descriptor, sequence_chi_b, contour_points
+export SCFTSequenceFluid, SCFTSequenceSystem, SequenceDescriptor, sequence_model,
+       sequence_pair_matrix, step_descriptor, taper_descriptor, sequence_chi_b, contour_points

@@ -13,6 +13,7 @@ using ChemicalIdentifiers
     include("test_scft_model.jl")
     include("test_scft_composite.jl")
     include("test_scft_orientation.jl")
+    include("test_scft_sequence.jl")
     include("test_wlc.jl")
     # GPU backend parity (test_wlc_gpu.jl) is not run for now; include it again to test
     # Metal/CUDA. It self-skips without a functional backend.
