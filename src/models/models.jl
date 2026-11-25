@@ -307,12 +307,14 @@ SCFT's `preallocate_model` counterpart to the generic DFT-family `preallocate_mo
 (`src/base/devices.jl`). Bundles everything `get_new_profile!`/`converge!` need each
 iteration besides the propagator buffers and the main field array `δfδρ_res` (SCFT's `w`):
 a second field buffer `w_new`, quadrature weights/`V_eff`, the bulk field `w_bulk`, a
-`compute_fields!` scratch buffer, and per-species `exp_field`/`inv_exp_field` caches.
+`compute_fields!` scratch buffer, per-species `exp_field`/`inv_exp_field` caches, the
+interactions' own buffers (`preallocate_interactions`), and — with an active
+[`MaierSaupe`](@ref) — the orientation moments `R_tensor`/`R_tensor_new`.
 
 `quadrature` is a solve-time choice (not a system invariant), so it's accepted as a keyword
 here and forwarded from `preallocate(system, ρ; quadrature=...)`.
 """
-function _preallocate_model_scft_common(system::SCFTSystem, ρ; quadrature::Symbol=:trapz)
+function preallocate_model(system::SCFTSystem, ρ; quadrature::Symbol=:trapz)
     nd  = dimension(system)
     nspecies = length(system.model.groups.flattenedgroups)
     dz  = structure_dz(system.structure)
@@ -335,11 +337,6 @@ function _preallocate_model_scft_common(system::SCFTSystem, ρ; quadrature::Symb
     inv_exp_field = [similar(selectdim(w_new, nd+1, 1)) for _ in 1:nspecies]
     interaction_caches = preallocate_interactions(system, w_new)
 
-    return (; w_new, weights, V_eff, w_bulk, scratch, exp_field, inv_exp_field, interaction_caches)
-end
-
-function preallocate_model(system::SCFTSystem, ρ; quadrature::Symbol=:trapz)
-    base = _preallocate_model_scft_common(system, ρ; quadrature=quadrature)
     # Auxiliary solver state for interactions whose field is not part of `w`. Today that
     # is Maier-Saupe: the orientation-moment tensor `R_tensor` (shape
     # `(ngrid..., nspecies, 6)`, see `compute_orientation_moments`) and its per-iteration
@@ -347,14 +344,14 @@ function preallocate_model(system::SCFTSystem, ρ; quadrature::Symbol=:trapz)
     # and converge!/get_new_profile! then skip all orientational-field work.
     R_tensor = R_tensor_new = nothing
     if has_maier_saupe(system.model)
-        nspecies = length(system.model.groups.flattenedgroups)
         FT = eltype(ρ)
         # On the same device as ρ (a host array here breaks GPU broadcasts with the
         # device-resident orientation grid).
         R_tensor     = fill!(similar(ρ, FT, system.structure.ngrid..., nspecies, 6), zero(FT))
         R_tensor_new = fill!(similar(ρ, FT, system.structure.ngrid..., nspecies, 6), zero(FT))
     end
-    return (; base..., R_tensor, R_tensor_new)
+    return (; w_new, weights, V_eff, w_bulk, scratch, exp_field, inv_exp_field, interaction_caches,
+              R_tensor, R_tensor_new)
 end
 
 function length_scales(model::EoSModel)

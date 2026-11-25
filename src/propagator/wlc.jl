@@ -77,10 +77,7 @@ function WLCPropagator(
         "dimension(structure) = $nd."
     )
 
-    segment_species = species.sequence
-    N = length.(segment_species)
-    nchains = length(N)
-    trees = [_oriented_tree(species, c) for c in 1:nchains]
+    trees = [_oriented_tree(species, c) for c in eachindex(species.sequence)]
 
     sht = SHTPlan(L_max, FP)
     n_orient = sht.n_theta * sht.n_phi
@@ -100,33 +97,20 @@ function WLCPropagator(
     lp_species = persistence_lengths(model)   # NaN for Gaussian species (never used for them)
     oriented = [is_oriented(c) for c in model.chains]
 
-    bond_pairs = Set{Tuple{Int,Int}}()
-    for c in 1:nchains
-        seg_spec = segment_species[c]
-        ig = species.i_groups[c]
-        bonds = species.n_intergroups[c]
-        for a in 1:N[c], b in (a+1):N[c]
-            if bonds[ig[a], ig[b]] != 0
-                push!(bond_pairs, minmax(seg_spec[a], seg_spec[b]))
-            end
-        end
-    end
+    bond_pairs = _bonded_species_pairs(species)
 
     CT = Complex{FP}
     trans_kernel = Dict{Tuple{Int,Int}, Array{CT}}()
     trans_kernel_conj = Dict{Tuple{Int,Int}, Array{CT}}()
     bend_eig = Dict{Tuple{Int,Int}, Vector{FP}}()
     gauss_kernel = Dict{Tuple{Int,Int}, Array{CT}}()
-    ν_sq = zeros(FP, rfft_ngrid...)
-    for i in 1:nd
-        ν_sq .+= ν[i] .^ 2
-    end
+    k2 = _rfft_k2(structure, FP)
 
     for (α, β) in bond_pairs
         if !(oriented[α] && oriented[β])
             # Gaussian bond (touches a Gaussian bead): same kernel as DiscreteGaussianChainPropagator.
             b_g = α == β ? FP(b_species[α]) : sqrt(FP(b_species[α]^2 + b_species[β]^2) / 2)
-            gauss_kernel[(α, β)] = CT.(exp.(-2 * FP(pi)^2 * b_g^2 .* ν_sq ./ 3))
+            gauss_kernel[(α, β)] = CT.(_gaussian_bond_kernel(k2, b_g))
             continue
         end
         b_bond = α == β ? FP(b_species[α]) : sqrt(FP(b_species[α]^2 + b_species[β]^2) / 2)

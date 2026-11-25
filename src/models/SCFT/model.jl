@@ -79,7 +79,6 @@ export SCFTModel, bulk_free_energy_density
    Accessors (the only way the propagators, solver and sampling code read the model)
 --------------------------------------------------------------------------------- =#
 
-species_names(model::SCFTModel) = model.groups.flattenedgroups
 nspecies(model::SCFTModel) = length(model.groups.flattenedgroups)
 
 """Per-species segment/bond length `b`, in species order."""
@@ -172,8 +171,7 @@ actual chain positions (via `get_connectivity`, proven to return species names i
 left-to-right order for an unbranched string) rather than Clapeyron's own ascending-global-
 index extraction — which discards chain-position order (all "A" instances get consecutive
 global indices, then all "B" instances, *regardless of interleaving* — fatal for a
-discrete-Gaussian-chain propagator that needs the exact sequence; see
-`project_scft_clapeyron_eos` memory for why the generic version was ruled out).
+discrete-Gaussian-chain propagator that needs the exact sequence).
 
 Global flattened indices are still assigned **type-contiguous** (`"A_*"` block, then
 `"B_*"` block, matching Clapeyron's own convention) so that

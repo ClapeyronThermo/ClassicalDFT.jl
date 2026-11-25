@@ -30,61 +30,18 @@ function DiscreteGaussianChainPropagator(
     ::Type{FP}=Float64
 ) where FP<:AbstractFloat
     b_species = segment_lengths(model)
-    segment_species = species.sequence
-    N = length.(segment_species)
-    nchains = length(N)
-    @assert length(segment_species) == nchains
-    for c in 1:nchains
-        @assert length(segment_species[c]) == N[c]
-    end
-
-    nd = dimension(structure)
     ngrid = structure.ngrid
-    ω̂ = structure_fftfreq(structure)
-
-    # Build |ν|² on the R2C (half-complex) grid.
-    # First dimension uses rfftfreq (0..N/2 only), rest use fftfreq.
-    # This matches the output layout of plan_rfft, halving the kernel memory and
-    # matching the complexity of a real-to-complex FFT (~2× cheaper than C2C).
-    lb1, ub1 = bounds(structure, 1)
-    ω̂1_rfft  = rfftfreq(ngrid[1], ngrid[1] / (ub1 - lb1))
     rfft_ngrid = (ngrid[1] ÷ 2 + 1, ngrid[2:end]...)
-
-    ν_sq = zeros(rfft_ngrid...)
-    # Dimension 1: rfftfreq
-    ν_sq .+= reshape(ω̂1_rfft .^ 2, ntuple(d -> d == 1 ? rfft_ngrid[1] : 1, nd))
-    # Dimensions 2..nd: standard fftfreq
-    for i in 2:nd
-        ν_sq .+= reshape(ω̂[i] .^ 2, ntuple(d -> d == i ? rfft_ngrid[d] : 1, nd))
-    end
-
-    # Find all unique bonded species pairs across all chains, walking each chain's
-    # bond tree (species.i_groups/n_intergroups, copied off the expanded model in
-    # get_species — see SCFTSpecies's docstring) rather than assuming linear
-    # i-1/i adjacency. Degenerates to the old linear walk when every chain is unbranched.
-    bond_pairs = Set{Tuple{Int,Int}}()
-    for c in 1:nchains
-        seg_spec = segment_species[c]
-        ig = species.i_groups[c]
-        bonds = species.n_intergroups[c]
-        for a in 1:N[c], b in (a+1):N[c]
-            if bonds[ig[a], ig[b]] != 0
-                push!(bond_pairs, minmax(seg_spec[a], seg_spec[b]))
-            end
-        end
-    end
+    k2 = _rfft_k2(structure, Float64)
+    bond_pairs = _bonded_species_pairs(species)
 
     # Compute kernel for each unique bond pair in R2C (half-complex) shape.
     # Precision is controlled by FP (set via DFTOptions' precision kwarg; Float64 by default).
     CT = Complex{FP}
     kernel_map = Dict{Tuple{Int,Int}, Array{CT}}()
     for (α, β) in bond_pairs
-        if α == β
-            b_bond = b_species[α]
-        else
-            b_bond = sqrt((b_species[α]^2 + b_species[β]^2) / 2)
-        end
-        kernel_map[(α, β)] = CT.(exp.(-2π^2 * b_bond^2 .* ν_sq ./ 3))
+        b_bond = α == β ? b_species[α] : sqrt((b_species[α]^2 + b_species[β]^2) / 2)
+        kernel_map[(α, β)] = CT.(_gaussian_bond_kernel(k2, b_bond))
     end
 
     # Move kernels to device.

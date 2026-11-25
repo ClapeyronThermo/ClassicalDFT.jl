@@ -70,7 +70,7 @@ function step_descriptor(fractions::AbstractVector{<:Real}, levels, Nc::Int)
 end
 
 # Explicit if/elseif/else, not clamp/min/max, by convention in this codebase for
-# functionals near the solve path (see project_scft_clapeyron_eos memory).
+# functionals near the solve path.
 function _ramp_t(s::Real, t0::Real, frac::Real)
     t1 = t0 + frac
     if s <= t0
@@ -161,7 +161,7 @@ parser is one ASCII character per node, capping distinct species at ~52), not a
 per-contour-point identity that can run to hundreds of nodes. Instead this builds the
 already-"expanded" `GroupParam` directly (one flattenedgroup per node, tridiagonal linear
 bond matrix) via Clapeyron's own raw positional `GroupParam` constructor — the exact same
-low-level idiom `expand_groups` (`eos.jl`) already uses internally for every other SCFT
+low-level idiom `expand_groups` (`model.jl`) already uses internally for every other SCFT
 model in this codebase, not a new pattern. Because node names contain no `"_"`,
 `_group_letter` (`src/structure/morphology.jl`) is the identity map, so
 [`get_species`](@ref) naturally treats every node as its own species with zero code
@@ -195,9 +195,8 @@ therefore sufficient for `free_energy` to be correct too, with no changes needed
 Exactly one sequence-chain molecule type per system (see
 [`SCFTSequenceSystem`](@ref) — the `1/Nc` above is chain-length-specific, so blending
 differently-sized sequence chains has no unambiguous shared normalization), linear chains
-only, and the Gaussian-thread propagator only (`DiscreteGaussianChainPropagator` — matches
-the paper's own canonical treatment; `WLCPropagator` is linear-only anyway, so
-orientation-resolved sequence chains are a natural but separate future extension).
+only, and Gaussian segments only (`DiscreteGaussianChainPropagator`, the paper's own
+treatment).
 """
 function SCFTSequenceFluid(descriptor::SequenceDescriptor, b; rho0::Real, kappa::Real,
                             gamma = (f1, f2) -> sum(abs2, f1 .- f2),

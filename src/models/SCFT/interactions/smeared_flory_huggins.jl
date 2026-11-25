@@ -25,21 +25,6 @@ SmearedFloryHugginsChi(chi, a::Real) = SmearedFloryHugginsChi(chi, Float64(a))
 bind_interaction(int::SmearedFloryHugginsChi, species::Vector{String}) =
     SmearedFloryHugginsChi(_species_matrix(int.chi, species, "SmearedFloryHugginsChi chi"; zero_diagonal=true), int.a)
 
-# Squared angular wavenumber |k|² = (2π)²|ν|² on the R2C (half-complex) grid of `structure`.
-function _rfft_k2(structure, ::Type{FP}) where FP
-    nd = dimension(structure)
-    ngrid = structure.ngrid
-    ω̂ = structure_fftfreq(structure)
-    lb1, ub1 = bounds(structure, 1)
-    rfft_ngrid = (ngrid[1] ÷ 2 + 1, ngrid[2:end]...)
-    k2 = zeros(FP, rfft_ngrid...)
-    for d in 1:nd
-        ν = d == 1 ? rfftfreq(ngrid[1], ngrid[1] / (ub1 - lb1)) : ω̂[d]
-        k2 .+= reshape(FP.((2π .* ν) .^ 2), ntuple(i -> i == d ? rfft_ngrid[d] : 1, nd))
-    end
-    return k2
-end
-
 function preallocate_interaction(int::SmearedFloryHugginsChi, system, ρ)
     nd = dimension(system)
     FP = eltype(ρ)

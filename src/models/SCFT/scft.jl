@@ -198,9 +198,8 @@ const SCFTWLCSystem = SCFTSystem{<:EoSModel,<:DFTSpecies,<:DFTStructure,<:WLCPro
 orientation-quadrature-weighted sum (`_orientation_marginalize`,
 `src/utils/spherical_harmonics.jl`) before the usual spatial integral — valid here
 (unlike the density formula below) since only one `q` is being integrated, not a product
-of two. `N_c` (not `chain_root`'s tree-root convention) is the right node to evaluate at:
-v1 has no branching, so `q_in[c]`'s bottom-up sweep (`_wlc_linear_sweep!`) already ends at
-the last chain position, not an internal tree root.
+of two. It is evaluated at the chain's `OrientedTree.qnode`, a leaf other than the root,
+where `q_out = ef` so `q_in` alone carries the whole chain's weight.
 """
 function compute_partition_functions(system::SCFTWLCSystem, w, w_bulk, q_in, dz;
                                      weights=nothing, V_eff=nothing, exp_field=nothing)
@@ -455,8 +454,7 @@ With this normalization, `Σ_a R_aa^α(r)` is exactly `ρ_α(r)` (since `Σ_a u_
 so `R` is bounded by `ρ_α(r)`'s own bound (`≤ρ0` in an incompressible melt) — matching
 `ρ`'s own status closely enough that the standard SCFT double-counting identity
 `wMSρ_sum = 2×U_MS` closes exactly (both `R` and `ρ` share the same
-`prefactor/Qc`-normalized "density-like" status the argument in
-`/Users/pierrewalker/.claude/plans/radiant-brewing-sprout.md` requires).
+`prefactor/Qc`-normalized "density-like" status).
 
 `maier_saupe_field`/`inv_exp_field`, when provided, must be the *same* values passed to
 the `compute_densities!` call this shares `q_in`/`q_out`/`Q` with, for consistency.

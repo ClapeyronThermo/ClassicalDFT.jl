@@ -122,6 +122,39 @@ struct WLCPropagator{S<:SHTPlan,K,B,G} <: DFTPropagator
     trees::Vector{OrientedTree}
 end
 
+# |k|² = (2π)²|ν|² on the R2C (half-complex, `plan_rfft`) grid of `structure`: the first
+# dimension uses rfftfreq (0..N/2), the rest fftfreq.
+function _rfft_k2(structure, ::Type{FP}) where FP
+    nd = dimension(structure)
+    ngrid = structure.ngrid
+    ω̂ = structure_fftfreq(structure)
+    lb1, ub1 = bounds(structure, 1)
+    rfft_ngrid = (ngrid[1] ÷ 2 + 1, ngrid[2:end]...)
+    k2 = zeros(FP, rfft_ngrid...)
+    for d in 1:nd
+        ν = d == 1 ? rfftfreq(ngrid[1], ngrid[1] / (ub1 - lb1)) : ω̂[d]
+        k2 .+= reshape(FP.((2π .* ν) .^ 2), ntuple(i -> i == d ? rfft_ngrid[d] : 1, nd))
+    end
+    return k2
+end
+
+# Fourier transform of a discrete Gaussian bond of statistical segment length b.
+_gaussian_bond_kernel(k2, b) = exp.(-k2 .* (b^2 / 6))
+
+# Unique (sorted) species pairs joined by a bond anywhere in any chain, from the bond tree
+# `species.i_groups`/`species.n_intergroups` (works for linear and branched chains).
+function _bonded_species_pairs(species)
+    pairs = Set{Tuple{Int,Int}}()
+    for (c, seq) in enumerate(species.sequence)
+        ig = species.i_groups[c]
+        bonds = species.n_intergroups[c]
+        for a in eachindex(seq), b in (a+1):length(seq)
+            bonds[ig[a], ig[b]] != 0 && push!(pairs, minmax(seq[a], seq[b]))
+        end
+    end
+    return pairs
+end
+
 cache_q_in(cache_propagator::Tuple) = cache_propagator[1]
 cache_q_out(cache_propagator::Tuple) = cache_propagator[2]
 cache_q_in(cache_propagator::NamedTuple) = cache_propagator.q_in
