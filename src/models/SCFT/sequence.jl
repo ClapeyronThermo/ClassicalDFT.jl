@@ -164,7 +164,7 @@ bond matrix) via Clapeyron's own raw positional `GroupParam` constructor — the
 low-level idiom `expand_groups` (`model.jl`) already uses internally for every other SCFT
 model in this codebase, not a new pattern. Because node names contain no `"_"`,
 `_group_letter` (`src/structure/morphology.jl`) is the identity map, so
-[`get_species`](@ref) naturally treats every node as its own species with zero code
+`get_species` naturally treats every node as its own species with zero code
 changes, and [`SCFTSequenceSystem`](@ref) can call `get_species`/`get_propagator`
 directly on this model with no `expand_model` step.
 
@@ -288,7 +288,7 @@ end
 Construct an [`SCFTSystem`](@ref) for a sequence-SCFT `model` built by
 [`SCFTSequenceFluid`](@ref). Mirrors `SCFTSystem`'s own constructor exactly, minus the
 `expand_model` step — `model` is already "expanded" (one node per species) by
-construction, so [`get_species`](@ref)/`get_propagator` are called on it directly. See
+construction, so `get_species`/`get_propagator` are called on it directly. See
 [`SCFTSequenceFluid`](@ref)'s docstring for why this is safe and why the general
 `mol_structure`-based path isn't used here.
 

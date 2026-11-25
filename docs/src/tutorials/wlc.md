@@ -1,21 +1,21 @@
 # Worm-Like Chains & Orientational Order
 
 The [Self-Consistent Field Theory tutorial](../tutorials/scft.md) builds an `SCFTSystem`
-around `SCFTLatticeFluid`, whose `DiscreteGaussianChainPropagator` has no notion of bond
-orientation at all — only position. `SCFTWormLikeChainFluid` (see [Worm-Like Chain
-Model](../models/scft.md#Worm-Like-Chain-Model)) instead tracks each species' full 3D
-bond orientation alongside position, via `WLCPropagator`. This tutorial builds a
-rod-coil diblock melt (one exactly rigid species, one flexible) and shows the three
-things that unlocks beyond a density profile: a nematic order parameter, a mean
-orientation vector field, and actual sampled single-chain conformations.
+from Gaussian chains, whose `DiscreteGaussianChainPropagator` has no notion of bond
+orientation at all — only position. Giving species a [`WormLikeChain`](@ref
+ClassicalDFT.WormLikeChain) or [`RigidRod`](@ref ClassicalDFT.RigidRod) representation
+(see [Chain representations](@ref)) instead tracks their full 3D bond orientation
+alongside position, via `WLCPropagator`. This tutorial builds a rod-coil diblock melt
+(one exactly rigid species, one semiflexible) and shows the three things that unlocks
+beyond a density profile: a nematic order parameter, a mean orientation vector field, and
+actual sampled single-chain conformations.
 
 ## Building the worm-like-chain model
 
-`SCFTWormLikeChainFluid` takes the same `(name, sequence)` component list as
-`SCFTLatticeFluid`, but `b` (bond length) and `lp` (persistence length) are both
-indexed by species, instead of a single shared statistical segment length. Species
-`"A"` (the rod) is set to the exact rigid-rod limit, `lp=Inf`; species `"B"` (the coil)
-gets a finite persistence length:
+Each species gets its own chain representation: `"A"` (the rod) is an exactly rigid
+[`RigidRod`](@ref ClassicalDFT.RigidRod), `"B"` (the coil) a semiflexible
+[`WormLikeChain`](@ref ClassicalDFT.WormLikeChain) with bond length `b` and persistence
+length `lp`:
 
 ```julia
 julia> using ClassicalDFT
@@ -24,22 +24,18 @@ julia> N_A, N_B = 14, 6
 
 julia> f = N_A / (N_A + N_B)   # 0.7 -- rod is the majority species
 
-julia> b = [1.0, sqrt(2)]      # bond length per species
-
-julia> lp = [Inf, 0.5*sqrt(2)] # persistence length per species -- A: exact rigid rod
-
-julia> chi = zeros(2, 2)
-
-julia> chi[1, 2] = chi[2, 1] = 0.8
-
-julia> model = SCFTWormLikeChainFluid([("diblock", ["A"=>N_A, "B"=>N_B])], b, lp, chi;
-                                       rho0=1.0, kappa=25.0, L_max=6)
+julia> model = SCFTModel([("diblock", ["A"=>N_A, "B"=>N_B])];
+                         rho0 = 1.0, L_max = 6,
+                         chain = Dict("A" => RigidRod(b=1.0),
+                                      "B" => WormLikeChain(b=sqrt(2), lp=0.5*sqrt(2))),
+                         interactions = (FloryHugginsChi(Dict(("A","B") => 0.8)),
+                                         HelfandCompressibility(25.0)))
 ```
 
-`L_max` is the spherical-harmonic truncation degree used to resolve each bond's
-orientation distribution (see `SCFTWormLikeChainFluid`'s own docstring for how to pick
-it) — larger for stiffer species, at the cost of more orientation-grid nodes per SCFT
-iteration.
+(The legacy form `SCFTWormLikeChainFluid(grouplist, b, lp, chi; rho0, kappa, L_max)`
+builds the same model.) `L_max` is the spherical-harmonic truncation degree used to
+resolve each bond's orientation distribution — larger for stiffer species and more
+strongly aligned states, at the cost of more orientation-grid nodes per SCFT iteration.
 
 As in every other tutorial, chain connectivity is supplied separately via
 `mol_structure`:
@@ -79,7 +75,7 @@ its stability limit for this system — pass a smaller `beta` explicitly:
 ```julia
 julia> ρ = initialize_profiles(system)
 
-julia> converge!(system, ρ; tol=1e-5, maxit=3000, beta=5e-3)
+julia> result = converge!(system, ρ; tol=1e-5, maxit=3000, beta=5e-3, verbose=true)
 ```
 
 ```
@@ -193,11 +189,14 @@ directly) and they're used as-is, with no recomputation.
 
 ## Next steps
 
-- `nu` (see `SCFTWormLikeChainFluid`'s docstring) adds an explicit Maier-Saupe
-  orientational coupling between species, on top of the immiscibility-driven alignment
-  shown here. `compute_propagator_fields` doesn't support `nu != 0` models — its
-  converged `q_in`/`q_out` depend on state `converge!` tracks across iterations, not
-  `ρ` alone — and throws rather than silently returning the wrong field.
+- [`MaierSaupe`](@ref ClassicalDFT.MaierSaupe) adds an explicit orientational coupling
+  between species, on top of the immiscibility-driven alignment shown here. Start
+  `converge!` with `director=(0, 0, 1)` to let a nematic state develop, and see
+  [Bulk thermodynamics](@ref) for nematic bulk phases and isotropic–nematic coexistence.
+  With Maier-Saupe or [`Incompressible`](@ref ClassicalDFT.Incompressible), the converged
+  propagators depend on solver state that `ρ` alone doesn't determine, so the functions
+  above need it passed in: `q_in, q_out = compute_propagator_fields(system, ρ, result)`
+  with `result = converge!(system, ρ; ...)`.
 - `orientation_order_parameter`/`mean_orientation_field`/`sample_chain` all work
   identically for `dimension(system) ∈ {1,2,3}` (only `plot_chain_conformations` itself
   is currently 2D-only) — see [Methods](../api/methods.md) for the full list.

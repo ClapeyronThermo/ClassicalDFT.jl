@@ -17,7 +17,7 @@ only develops from an anisotropic start; pass `director` (and `nematic_order`) t
 
 The orientational mean field is `u`-dependent, so it does not enter the scalar field `w`;
 it is built from the orientation tensor state `R_tensor` that the solver carries
-(see [`compute_maier_saupe_field`](@ref), [`compute_orientation_moments`](@ref)). Its
+(see `compute_maier_saupe_field`, [`compute_orientation_moments`](@ref)). Its
 free-energy contribution is the self-energy minus its double-counting correction,
 `U_MS − 2U_MS = −U_MS`, with `U_MS = −(3/(4ρ₀)) Σ_αβ ν_αβ ∫ R^α:R^β dr`.
 """

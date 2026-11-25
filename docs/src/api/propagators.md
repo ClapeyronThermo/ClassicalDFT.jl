@@ -18,14 +18,17 @@ own field into a chain-connectivity contribution to the functional derivative �
 SCFT (see [SCFT](../models/scft.md)), the same [`DiscreteGaussianChainPropagator`](@ref
 ClassicalDFT.DiscreteGaussianChainPropagator) instead builds the forward/backward propagators used
 to assemble density profiles directly. [`WLCPropagator`](@ref ClassicalDFT.WLCPropagator) is the
-same idea for a bead-rod (worm-like) chain instead of a Gaussian one — see the [Worm-Like
-Chains & Orientational Order](../tutorials/wlc.md) tutorial.
+same idea for a bead-rod (worm-like) chain instead of a Gaussian one; it also handles
+chains that mix Gaussian and orientation-resolved species and branched chains (see
+[Chain representations](@ref)) — see the [Worm-Like Chains & Orientational
+Order](../tutorials/wlc.md) tutorial.
 
 ```@docs
 ClassicalDFT.IdealPropagator
 ClassicalDFT.TangentHSPropagator
 ClassicalDFT.DiscreteGaussianChainPropagator
 ClassicalDFT.WLCPropagator
+ClassicalDFT.OrientedTree
 ```
 
 ## Functions

@@ -102,16 +102,16 @@ an already-converged `ρ`. Every WLC function that needs `q_in`/`q_out`
 [`mean_orientation_field`](@ref), [`bead_marginal_density`](@ref),
 [`terminal_orientation_anchor`](@ref), [`sample_chain`](@ref), and the Visualization
 extension's `plot_orientation_field`/`plot_chain_conformations`) takes `ρ` as its
-positional argument and calls this internally via [`resolve_propagator_fields`](@ref)
+positional argument and calls this internally via `resolve_propagator_fields`
 when its own `q_in`/`q_out` keywords are left at their `nothing` default — callers never
 need to compute a propagator by hand.
 
-Does not thread through the Maier-Saupe orientation-moment state `R_tensor` that
-`converge!` carries between iterations for `nu != 0` models (see
-`get_new_profile!(system::SCFTWLCSystem, ...)`, `src/methods/converge.jl`) — that state
-isn't recoverable from `ρ` alone, only from `converge!`'s own iteration history, so this
-throws an `ArgumentError` for such a model instead of silently returning `q_in`/`q_out`
-for the wrong (`nu=0`) field.
+With a [`MaierSaupe`](@ref) or [`Incompressible`](@ref) interaction the converged
+propagators depend on solver state that `ρ` alone does not determine (the orientation
+moments, the pressure field), so this form throws an `ArgumentError`. Pass the result of
+`converge!` instead — `compute_propagator_fields(system, ρ, result)` uses its converged
+`w` and `R_tensor` and works for every model — and give the returned `(q_in, q_out)` to
+the functions above.
 
 Not cached: each call reallocates `cache_propagator` and reruns `propagate!` once. Every
 function above accepts `q_in`/`q_out` as optional keywords for exactly this reason — for
@@ -121,22 +121,32 @@ this once yourself and pass its `(q_in, q_out)` into each subsequent call rather
 letting every call recompute its own.
 """
 function compute_propagator_fields(system::SCFTSystem, ρ)
-    if has_maier_saupe(system.model)
+    if has_maier_saupe(system.model) || get_interaction(system.model, Incompressible) !== nothing
         throw(ArgumentError(
-            "compute_propagator_fields does not support nu != 0 (Maier-Saupe) models -- " *
-            "the converged q_in/q_out there depend on the R_tensor state converge! tracks " *
-            "across iterations, which isn't recoverable from ρ alone."))
-    end
-    if get_interaction(system.model, Incompressible) !== nothing
-        throw(ArgumentError(
-            "compute_propagator_fields does not support Incompressible models -- the pressure " *
-            "field ξ(r) is reconstructed from the solver's current w, not from ρ alone."))
+            "compute_propagator_fields(system, ρ) cannot rebuild the converged propagators of a " *
+            "MaierSaupe or Incompressible model from ρ alone. Use " *
+            "`compute_propagator_fields(system, ρ, converge!(system, ρ))` (or keep converge!'s " *
+            "result) and pass the returned (q_in, q_out) on."))
     end
     w = zero(ρ)
-    w_bulk = compute_bulk_fields(system.model, compute_bulk_densities(system))
     compute_fields!(system, ρ, w)
+    return _propagators_at(system, ρ, w, nothing)
+end
+
+"""
+    compute_propagator_fields(system::SCFTSystem, ρ, result)
+
+`(q_in, q_out)` at the converged state described by `result`, the NamedTuple returned by
+[`converge!`](@ref) (its `w` and, with Maier-Saupe, `R_tensor`). Works for every model.
+"""
+compute_propagator_fields(system::SCFTSystem, ρ, result::NamedTuple) =
+    _propagators_at(system, ρ, result.w,
+                    result.R_tensor === nothing ? nothing : compute_maier_saupe_field(system, result.R_tensor))
+
+function _propagators_at(system, ρ, w, ms_field)
+    w_bulk = compute_bulk_fields(system.model, compute_bulk_densities(system))
     cache_propagator = preallocate_propagator(system, ρ)
-    propagate!(system, ρ, w, cache_propagator; w_bulk=w_bulk)
+    propagate!(system, ρ, w, cache_propagator; w_bulk=w_bulk, maier_saupe_field=ms_field)
     return cache_q_in(cache_propagator), cache_q_out(cache_propagator)
 end
 
@@ -389,3 +399,6 @@ Requires `using Makie` (or a Makie backend, e.g. `CairoMakie`) — this is a stu
 then.
 """
 function plot_orientation_field end
+
+export compute_propagator_fields, bead_marginal_density, terminal_orientation_anchor, sample_chain,
+       plot_chain_conformations, plot_orientation_field

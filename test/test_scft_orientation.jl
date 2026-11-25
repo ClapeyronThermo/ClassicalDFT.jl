@@ -52,6 +52,24 @@ end
         @test_throws ArgumentError CDFT.SCFTProblem(sys; director=(0, 0, 0))
     end
 
+    @testset "propagators from converge!'s result reproduce ρ (Maier-Saupe, Incompressible)" begin
+        for ints in ((FloryHugginsChi([0.0 2.0; 2.0 0.0]), HelfandCompressibility(20.0), MaierSaupe([2.0 0.0; 0.0 0.0])),
+                     (FloryHugginsChi([0.0 2.0; 2.0 0.0]), Incompressible(lambda=5.0)))
+            sys = scft_system("A"^6 * "B"^6; L=12.0, ng=48, interactions=ints,
+                chain=Dict("A" => WormLikeChain(b=1.0, lp=8.0), "B" => WormLikeChain(b=1.0, lp=1.0)))
+            ρ, r = solve_lamella(sys; tol=1e-9, maxit=4000)
+            @test r.converged
+            @test_throws ArgumentError CDFT.compute_propagator_fields(sys, ρ)
+            q_in, q_out = CDFT.compute_propagator_fields(sys, ρ, r)
+            w_bulk = CDFT.compute_bulk_fields(sys.model, CDFT.compute_bulk_densities(sys))
+            ms = r.R_tensor === nothing ? nothing : CDFT.compute_maier_saupe_field(sys, r.R_tensor)
+            ρ2 = zero(ρ)
+            CDFT.compute_densities!(sys, r.w, w_bulk, q_in, q_out, r.Q, ρ2; maier_saupe_field=ms)
+            @test ρ2 ≈ ρ rtol = 1e-6
+            @test all(isfinite, orientation_order_parameter(sys, ρ; axis=1, q_in, q_out))
+        end
+    end
+
     @testset "isotropic Maier-Saupe term: uniform SCFT free energy = bulk free energy" begin
         nu = [0.4 0.2; 0.2 0.3]
         HV, ρseg, S, sys = uniform_nematic("AAABBB", WormLikeChain(b=1.0, lp=2.0),

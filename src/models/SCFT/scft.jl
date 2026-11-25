@@ -715,3 +715,5 @@ export SCFTSystem
 
 include("sequence.jl")
 include("nematic.jl")
+
+export compute_orientation_tensor, mean_orientation_field, orientation_order_parameter

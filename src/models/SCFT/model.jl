@@ -273,7 +273,7 @@ The per-node-instance expansion of `model` (one flattened group per chain positi
 [`expand_groups`](@ref)), mirroring `HeterogcPCPSAFT`/`SAFTgammaMie`'s
 `expand_model(model, mol_structure)`. Only `groups` is expanded: chain representations and
 interactions stay indexed by the original species, which is all SCFT needs — the
-expanded model is a transient used by [`get_species`](@ref) to read chain order, and
+expanded model is a transient used by `get_species` to read chain order, and
 `SCFTSystem` keeps the original model.
 """
 function expand_model(model::SCFTModel, mol_structure::Dict{String,<:MolStructure})
