@@ -37,7 +37,7 @@ ClassicalDFT.adsorption
 
 A [`WLCPropagator`](@ref ClassicalDFT.WLCPropagator) system tracks each species' full 3D
 bond orientation alongside position, so density isn't the only quantity that can be
-resolved in space — see the [Worm-Like Chains & Orientational Order](../tutorials/wlc.md)
+resolved in space — see the [Self-Consistent Field Theory](../tutorials/scft.md)
 tutorial. Every function below (and in the two sections after it) takes the converged
 `ρ` directly; `q_in`/`q_out` are computed from it internally
 ([`compute_propagator_fields`](@ref)) unless passed as the optional `q_in`/`q_out`

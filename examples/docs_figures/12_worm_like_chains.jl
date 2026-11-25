@@ -1,4 +1,4 @@
-# Figures for docs/src/tutorials/wlc.md
+# Figures for docs/src/tutorials/scft.md (semiflexible and rigid chains section)
 #
 # A rod-coil diblock (A: exact rigid rod, lp=Inf; B: flexible coil), parameters chosen to
 # match Tang et al. 2015 (Macromolecules 48, 9060)'s Fig. 11 lamellar point (chiN=16,

@@ -116,7 +116,7 @@ the functions above.
 Not cached: each call reallocates `cache_propagator` and reruns `propagate!` once. Every
 function above accepts `q_in`/`q_out` as optional keywords for exactly this reason — for
 repeated queries at the same converged `ρ` (e.g. sampling many chains from one anchor,
-as in the [Worm-Like Chains](../tutorials/wlc.md) tutorial's loop/bridge example), call
+as in the [Self-Consistent Field Theory](../tutorials/scft.md) tutorial's sampling example), call
 this once yourself and pass its `(q_in, q_out)` into each subsequent call rather than
 letting every call recompute its own.
 """

@@ -32,8 +32,8 @@ swappable components in the style of Clapeyron's cubic equations of state:
 The same components define the inhomogeneous problem ([`SCFTSystem`](@ref
 ClassicalDFT.SCFTSystem), solved by [`converge!`](@ref ClassicalDFT.converge!)) and the
 bulk thermodynamics, including nematic phases ([Bulk thermodynamics](@ref)). See the
-[Self-Consistent Field Theory](../tutorials/scft.md) and [Worm-Like Chains & Orientational
-Order](../tutorials/wlc.md) tutorials for worked examples.
+[Self-Consistent Field Theory](../tutorials/scft.md) tutorial for worked examples, from a
+Gaussian diblock to rod-coil chains and their orientational order.
 
 ## Contents
 

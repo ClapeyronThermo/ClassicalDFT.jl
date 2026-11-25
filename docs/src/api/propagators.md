@@ -20,8 +20,8 @@ ClassicalDFT.DiscreteGaussianChainPropagator) instead builds the forward/backwar
 to assemble density profiles directly. [`WLCPropagator`](@ref ClassicalDFT.WLCPropagator) is the
 same idea for a bead-rod (worm-like) chain instead of a Gaussian one; it also handles
 chains that mix Gaussian and orientation-resolved species and branched chains (see
-[Chain representations](@ref)) — see the [Worm-Like Chains & Orientational
-Order](../tutorials/wlc.md) tutorial.
+[Chain representations](@ref)) — see the [Self-Consistent Field
+Theory](../tutorials/scft.md) tutorial.
 
 ```@docs
 ClassicalDFT.IdealPropagator
